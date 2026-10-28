@@ -5,8 +5,9 @@ Fuente primaria: checkout externo `kofxi_aw_modding`. Procedimiento:
 
 ## Estado inicial
 
-El playbook y el generador portable ya están preparados. Ejecutar M00 para
-construir el inventario. Existe un índice preliminar en
+El playbook y el generador portable están preparados; M00 tiene inventario
+descubierto y M01 está en primera revisión. Cuatro fichas de formato y ocho
+claims están transcritos, todavía no revalidados independientemente. Existe un índice preliminar en
 [`../research-index.md`](../research-index.md), pero no equivale a inventario ni
 acepta sus claims.
 
@@ -16,6 +17,7 @@ acepta sus claims.
 - `claim-ledger.csv`: una fila por afirmación que vaya a consumirse.
 - `decisions.md`: exclusión, contradicción, supersesión y licencias/bloqueos.
 - `generated-summary.md`: conteos derivados; no editar manualmente.
+- `decisions.md`: exclusiones, contradicciones, supersesión y bloqueos.
 
 Generar L0 desde el root del fork:
 

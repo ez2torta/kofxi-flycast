@@ -37,7 +37,8 @@ catálogo pasan al [backlog](../tasks/backlog.md).
 
 Los estados describen el catálogo en **este repo**; no declaran que la
 investigación original no exista. Ver el mapa en
-[`research-index.md`](research-index.md). No se copian ROMs, BIOS, RAM dumps,
+[`research-index.md`](research-index.md) y el estado de traspaso en
+[`migration/README.md`](migration/README.md). No se copian ROMs, BIOS, RAM dumps,
 saves ni artefactos pesados.
 
 ## Esquema requerido por entrada

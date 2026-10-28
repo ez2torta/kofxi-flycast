@@ -19,11 +19,11 @@ remotos creados todavía. El roadmap decide prioridad.
 | T09 Optimización medida | Sin asignar / PENDING | T05,T07,T08 | Una ruta de hotspot por PR, declarada antes | Hipótesis y métrica preregistradas, A/B y corpus G3; conservar resultados negativos. |
 | T10 Red/servicio | Sin asignar / PENDING | T06,T08 y builds de destino | services/, benchmarks/network/ | Staging, relay, netem y matriz cross-play; carga/fallos según G4/§4.2. |
 | T11 Empaquetado/aceptación | Sin asignar / PENDING | T09,T10,T02–T04 | packaging a definir, docs/evidence/ | Paquetes cuatro destinos, sets humanos G5, reproducción externa y G6. |
-| K01 Catálogo UNI/PVR/compresión | Sin asignar / PENDING | Ninguna para inventario; T01 para fixtures | docs/kofxi/formats/ | Fichas desde research-index, parser/fixtures separados, bounds y procedencia; no asumir catálogo verificado. |
+| K01 Catálogo UNI/PVR/compresión | Sin asignar / IN_PROGRESS (primera transcripción) | Ninguna para inventario; T01 para fixtures | docs/kofxi/formats/ | Cuatro fichas iniciales y 8 claims trazados; falta revisión independiente, resolución de scope AW/PS2, fixtures, bounds y decisión de licencia. |
 | K02 Resolver runtime actores/hitboxes | Sin asignar / PENDING | K01 para escalas/recursos; T01 para ticks | docs/kofxi/memory/, telemetry API a coordinar | Direcciones guest y estabilidad por build; resolver dinámico probado en sesiones naturales, read-only, sin host pointers. |
 | K03 QoL: overlay/input/frame data | Sin asignar / PENDING | K02,T07,T08 | Perfil XI/UI, rutas a verificar | Overlay read-only sincronizado al tick; falla de forma segura en builds no reconocidas; evidencia con cobertura declarada. |
 | K04 Training opt-in | Sin asignar / PENDING | T08,K03 | Perfil XI/training, rutas a verificar | Record/playback/reset; writes auditadas, identidad no vanilla, offline por defecto y riesgo online evaluado. |
-| K00 Migración de conocimiento | Sin asignar / PENDING | Ninguna | docs/kofxi/migration/, playbook | Ejecutar M00–M07: inventario/hash de fuentes, fichas canónicas con claims trazables, herramientas seleccionadas y auditoría. Aceptación según §9 de MIGRATION-PLAYBOOK. |
+| K00 Migración de conocimiento | Sin asignar / IN_PROGRESS | Ninguna | docs/kofxi/migration/, playbook | M00 inventario generado; M01 primera transcripción iniciada. Completar M00–M07: fichas revisadas, claims trazables, herramientas seleccionadas y auditoría según §9 de MIGRATION-PLAYBOOK. |
 
 ## Reglas para evitar bloqueos entre equipos
 

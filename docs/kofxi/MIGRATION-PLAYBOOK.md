@@ -174,6 +174,10 @@ en README/manifiesto. Si el inventario crece, generar summary; no editarlo a man
 **Evidencia:** `STATIC`, `DIRECTED_DIFFERENTIAL`, `NATURAL_RUNTIME`, `INDEPENDENT_EMULATOR`,
 `HARDWARE`, `SOURCE_CODE`, `CORPUS`. No existe ranking automático que vuelva
 `VERIFIED` una observación dirigida: registrar dominio y criterio del proyecto.
+**Estado del claim** (campo final del ledger): `CANDIDATE_NOT_REVALIDATED`,
+`CURRENT_WITHIN_DOMAIN`, `SUPERSEDED`, `CONTRADICTED`, `HISTORICAL_ONLY` o
+`BLOCKED`. Un claim candidato puede resumir fielmente una fuente y seguir sin
+ser aceptado como dato de producto.
 
 ## 8. Migrar herramientas sin traer el laboratorio entero
 

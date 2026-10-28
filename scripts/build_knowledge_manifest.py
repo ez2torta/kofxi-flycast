@@ -23,8 +23,6 @@ FIELDS = (
     "priority", "migration_status", "destination_paths", "related_sources",
     "license_review", "exclusion_or_blocker", "reviewer", "review_date",
 )
-
-
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -64,11 +62,16 @@ def main() -> None:
 
     output = args.output
     output.parent.mkdir(parents=True, exist_ok=True)
+    previous: dict[str, dict[str, str]] = {}
+    if output.is_file():
+        with output.open("r", encoding="utf-8-sig", newline="") as stream:
+            previous = {row["source_path"]: row for row in csv.DictReader(stream)}
     counts: Counter[str] = Counter()
+    statuses: Counter[str] = Counter()
     with output.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=FIELDS, lineterminator="\n")
         writer.writeheader()
-        for index, relative in enumerate(sorted(candidates), start=1):
+        for relative in sorted(candidates):
             path = candidates[relative]
             title = ""
             if path.suffix.lower() == ".md":
@@ -80,26 +83,33 @@ def main() -> None:
                 except (UnicodeDecodeError, OSError):
                     title = "[title unavailable]"
             writer.writerow({
-                "source_id": f"SRC-{index:05d}",
+                # Stable across inventory insertions/reordering.
+                "source_id": "SRC-" + hashlib.sha256(relative.encode("utf-8")).hexdigest()[:12],
                 "source_path": relative,
                 "sha256": sha256(path),
                 "size_bytes": path.stat().st_size,
                 "category": category(relative),
                 "title": title,
-                "source_revision": "",  # fill with source commit if clean/published
-                "platform_game_revision": "",
-                "evidence_type": "",
-                "claim_ids": "",
-                "priority": "UNTRIAGED",
-                "migration_status": "TODO",
-                "destination_paths": "",
-                "related_sources": "",
-                "license_review": "PENDING",
-                "exclusion_or_blocker": "",
-                "reviewer": "",
-                "review_date": "UNREVIEWED",
+                **{
+                    key: previous.get(relative, {}).get(key, default)
+                    for key, default in {
+                        "source_revision": "",  # fill with source commit if clean/published
+                        "platform_game_revision": "",
+                        "evidence_type": "",
+                        "claim_ids": "",
+                        "priority": "UNTRIAGED",
+                        "migration_status": "TODO",
+                        "destination_paths": "",
+                        "related_sources": "",
+                        "license_review": "PENDING",
+                        "exclusion_or_blocker": "",
+                        "reviewer": "",
+                        "review_date": "UNREVIEWED",
+                    }.items()
+                },
             })
             counts[category(relative)] += 1
+            statuses[previous.get(relative, {}).get("migration_status", "TODO")] += 1
     summary = args.summary
     summary.parent.mkdir(parents=True, exist_ok=True)
     with summary.open("w", encoding="utf-8", newline="\n") as stream:
@@ -107,7 +117,9 @@ def main() -> None:
         stream.write("Generado por `scripts/build_knowledge_manifest.py`. No editar a mano.\n\n")
         stream.write(f"- Root fuente etiquetado: `{root.name}`; la ruta absoluta no se incluye para mantener portabilidad.\n")
         stream.write(f"- Archivos indexados: **{len(candidates)}**.\n")
-        stream.write("- Estado: todos `TODO`, prioridad `UNTRIAGED`; no hay claims aprobados.\n")
+        stream.write("- Estado por fila (conservado desde el manifiesto anterior si existe):\n")
+        for status, count in sorted(statuses.items()):
+            stream.write(f"  - `{status}`: {count}\n")
         stream.write("- Las revisiones fuente están vacías hasta fijar un commit común.\n\n")
         stream.write("| Categoría | Archivos |\n|---|---:|\n")
         for name, count in sorted(counts.items()):
