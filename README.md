@@ -1,4 +1,24 @@
-# Flycast
+# KOF XI Flycast — laboratorio multiplataforma
+
+Fork de trabajo de Flycast para KOF XI Atomiswave: bajo consumo, baja latencia,
+rollback verificable y matchmaking común para Windows, Linux, Android y Switch.
+
+**Estado:** repositorio local preparado; sin mejoras medidas, builds propios
+aceptados ni servidor implementado todavía. Nombre provisional `kofxi-flycast`.
+
+- [Roadmap y estado vigente](docs/roadmap.md)
+- [Plan de aceptación completo](docs/plans/plan-flycast-kofxi-online.md)
+- [Especificaciones iniciales](docs/specifications/README.md)
+- [Tareas paralelizables](docs/tasks/backlog.md)
+- [Cómo trabajar en equipo](docs/team-workflow.md)
+- [Preparación local y futura publicación](docs/bootstrap.md)
+- [Procedencia y traspaso de investigación](docs/evidence/research-handoff.md)
+
+Se conserva el historial, código y licencias de Flycast y sus dependencias.
+La documentación inferior, sus badges, descargas y canales corresponden a
+**upstream**, no a releases ni resultados de este fork.
+
+## Flycast upstream
 
 [![Android CI](https://github.com/flyinghead/flycast/actions/workflows/android.yml/badge.svg)](https://github.com/flyinghead/flycast/actions/workflows/android.yml)
 [![C/C++ CI](https://github.com/flyinghead/flycast/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/flyinghead/flycast/actions/workflows/c-cpp.yml)

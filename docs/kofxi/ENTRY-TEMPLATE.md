@@ -1,0 +1,21 @@
+# KOF-XXX — título del hallazgo
+
+- **Pregunta/uso:**
+- **Confianza:** unknown / hypothesis / observed / corroborated / verified
+- **Estabilidad:** unknown / stable-format / build-fixed / runtime-resolved / transient
+- **Juego/revisión/hash/región/idioma:**
+- **Flycast/Dojo commit, backend y configuración:**
+- **Afirmación exacta:**
+- **Dominio demostrado:**
+- **Dominio no demostrado / contraejemplos:**
+- **Dirección:** espacio, base, offset, tipo, endianess, stride y cadena si aplica
+- **Método de observación y receta:**
+- **Entradas/estado inicial y controles:**
+- **Repeticiones/escenarios/personajes:**
+- **Fuentes originales:** ruta, informe, revisión y línea/sección
+- **Artefactos/hash:** referencia; no adjuntar ROM/BIOS/dump masivo
+- **QoL habilitada:** parser, overlay, frame data, training u otra
+- **Efecto:** read-only / writes. Si escribe, rangos y consecuencias
+- **Riesgo para determinismo/rollback/online:**
+- **Qué confirmaría, refutaría o limitaría el hallazgo:**
+- **Siguiente tarea/backlog:**
