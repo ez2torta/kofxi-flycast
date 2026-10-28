@@ -1,6 +1,8 @@
 build/
 build-*/
 artifact/
+/roms/
+/local-saves/
 
 # macOS
 .DS_Store

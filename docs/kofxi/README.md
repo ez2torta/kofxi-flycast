@@ -38,8 +38,12 @@ catálogo pasan al [backlog](../tasks/backlog.md).
 Los estados describen el catálogo en **este repo**; no declaran que la
 investigación original no exista. Ver el mapa en
 [`research-index.md`](research-index.md) y el estado de traspaso en
-[`migration/README.md`](migration/README.md). No se copian ROMs, BIOS, RAM dumps,
-saves ni artefactos pesados.
+[`migration/README.md`](migration/README.md). No se copian ROMs, BIOS ni RAM
+dumps. El único save versionado, con autorización expresa, es el fixture
+[`tests/fixtures/kofxi/unlocked-spanish.nvmem`](../../tests/fixtures/kofxi/unlocked-spanish.nvmem).
+
+Para importar/restaurar el fixture en un build local, ver
+[`local-test-save.md`](local-test-save.md).
 
 ## Esquema requerido por entrada
 

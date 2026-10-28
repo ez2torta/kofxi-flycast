@@ -18,7 +18,11 @@ preset `windows-msvc`, no inferir toolchain por el nombre de `build-*`.
   resultados dirigidos en aceptación global ni cifras objetivo en resultados.
 - Cada cambio funcional requiere evidencia pertinente: receta, build, hardware,
   controles, resultado y límites. Actualizar tarea/roadmap al cerrar o bloquear.
-- No versionar ROM/BIOS, dumps, saves, credenciales ni artefactos masivos.
+- No versionar ROM/BIOS, dumps, saves personales, credenciales ni artefactos
+  masivos. Excepción explícita autorizada por el usuario: el fixture
+  `tests/fixtures/kofxi/unlocked-spanish.nvmem`, declarado por el usuario como
+  su NVRAM y aprobado para este repo. No extender la excepción a otros saves,
+  copias runtime o backups.
 - Mantener conocimiento específico del juego en `docs/kofxi/`; cada dato lleva
   build/región, fuente, método, confianza, estabilidad y límites. No promover
   hipótesis a contrato ni depender de direcciones absolutas sin resolverlas.
