@@ -29,9 +29,10 @@ Un equipo no disponible bloquea su aceptación, no elimina la plataforma.
 | G5 — Servicio y jugadores | Pendiente | Matchmaking desplegable, capacidad medida y sets humanos. |
 | G6 — Entrega | Pendiente | Paquetes y aceptación de las cuatro plataformas obligatorias. |
 | H — Fidelidad hardware | Pendiente | Defecto y referencia AW independiente; evidencia pertinente. |
-| K00 — Migración de conocimiento | En progreso | M00 generó 1.573 filas; 1.569 siguen TODO y 4 fichas fuente están en revisión; M01 tiene 8 claims candidatos, falta revisión y M02–M07. |
+| K00 — Migración de conocimiento | En progreso | M00 generó 1.573 filas; 1.566 siguen TODO y 7 fuentes están en revisión; 11 claims candidatos/históricos, falta revisión y M02–M07. |
 | K01 — Formatos | En progreso | Resúmenes UNI/animaciones/LZSS/PVP-PVPL; fuente hash registrada, scope/fixtures/licencia por aceptar. |
-| K02–K04 — Memoria/QoL XI | Pendiente | K00/M02–M04; resolver mapa AW/PS2 antes de overlay y training. |
+| K02 — Runtime/memoria | En progreso, bloqueado para integración | Se transcriben observaciones AW y diferencias con mapa PS2; faltan capturas AW fijadas para resolver anchuras/cadena. |
+| K03–K04 — QoL XI | Pendiente | K00/M02–M04; resolver mapa AW/PS2 antes de overlay y training. |
 
 ## Primer sprint: FCT-00
 

@@ -120,7 +120,7 @@ def main() -> None:
         stream.write("- Estado por fila (conservado desde el manifiesto anterior si existe):\n")
         for status, count in sorted(statuses.items()):
             stream.write(f"  - `{status}`: {count}\n")
-        stream.write("- Las revisiones fuente están vacías hasta fijar un commit común.\n\n")
+        stream.write("- No hay revisión fuente limpia fijada; las filas en revisión pueden indicar `LOCAL-UNCOMMITTED`.\n\n")
         stream.write("| Categoría | Archivos |\n|---|---:|\n")
         for name, count in sorted(counts.items()):
             stream.write(f"| `{name}` | {count} |\n")

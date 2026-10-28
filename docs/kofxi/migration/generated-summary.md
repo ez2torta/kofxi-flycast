@@ -5,9 +5,9 @@ Generado por `scripts/build_knowledge_manifest.py`. No editar a mano.
 - Root fuente etiquetado: `kofxi_aw_modding`; la ruta absoluta no se incluye para mantener portabilidad.
 - Archivos indexados: **1573**.
 - Estado por fila (conservado desde el manifiesto anterior si existe):
-  - `IN_REVIEW`: 4
-  - `TODO`: 1569
-- Las revisiones fuente están vacías hasta fijar un commit común.
+  - `IN_REVIEW`: 7
+  - `TODO`: 1566
+- No hay revisión fuente limpia fijada; las filas en revisión pueden indicar `LOCAL-UNCOMMITTED`.
 
 | Categoría | Archivos |
 |---|---:|

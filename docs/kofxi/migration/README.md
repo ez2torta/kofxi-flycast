@@ -6,8 +6,9 @@ Fuente primaria: checkout externo `kofxi_aw_modding`. Procedimiento:
 ## Estado inicial
 
 El playbook y el generador portable están preparados; M00 tiene inventario
-descubierto y M01 está en primera revisión. Cuatro fichas de formato y ocho
-claims están transcritos, todavía no revalidados independientemente. Existe un índice preliminar en
+descubierto; M01 está en primera revisión y M02 en triage bloqueado. Hay cuatro
+fichas de formato, una ficha runtime y once claims transcritos, todavía no
+revalidados independientemente. Existe un índice preliminar en
 [`../research-index.md`](../research-index.md), pero no equivale a inventario ni
 acepta sus claims.
 
@@ -15,7 +16,6 @@ acepta sus claims.
 
 - `source-manifest.csv`: una fila por fuente candidata.
 - `claim-ledger.csv`: una fila por afirmación que vaya a consumirse.
-- `decisions.md`: exclusión, contradicción, supersesión y licencias/bloqueos.
 - `generated-summary.md`: conteos derivados; no editar manualmente.
 - `decisions.md`: exclusiones, contradicciones, supersesión y bloqueos.
 
