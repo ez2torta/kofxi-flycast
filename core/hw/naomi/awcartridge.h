@@ -36,6 +36,19 @@ private:
 	void device_reset();
 	u16 decrypt16(u32 address);
 	void recalc_dma_offset(int mode);
+#ifdef AW_CARTRIDGE_PROFILE
+	static void ProfileEvent(Event event, void *param);
+	void ReportRuntime(const char *reason);
+	bool profile_listening = false;
+	u64 profile_frames = 0;
+	u64 profile_last_frames = 0;
+	u64 profile_last_wall_ns = 0;
+	u64 profile_last_cpu_100ns = 0;
+	bool profile_cpu_valid = false;
+	u64 profile_last_words = 0;
+	u64 profile_last_sample_words = 0;
+	u64 profile_last_sample_ns = 0;
+#endif
 
 	u32 rombd_key;
 	u32 mpr_offset, mpr_bank;

@@ -291,6 +291,60 @@ No mide G1 decompression guest, RAM pico ni corrida sostenida, por lo que no per
 decidir materialidad. No se tocó serialización, estado guest, scheduler, GGPO,
 dynarec ni código habilitado por defecto.
 
+### Captura exploratoria CPU/RAM por intervalo (Windows)
+
+Responsable: agente de esta sesión, T05; rama `experiment/kofxi-rom-resource-benchmark`.
+Rutas: `core/hw/naomi/awcartridge.{h,cpp}` y este estudio. Dependencias T01 (recorrido
+e identidad) y T00/T08 antes de integrar contratos; no se modifica scheduler,
+serialización, dynarec ni GGPO. Todo permanece gated por `AW_CARTRIDGE_PROFILE`.
+
+Se observan eventos existentes VBlank/Pause/Resume/Terminate del emulador. Cada
+120 VBlanks (aprox. 2 s a 60 Hz), incluso sin DMA, se emiten `AW runtime` y `AW host`;
+también al inicializar el cartucho, pausar, reanudar o terminar. No se detecta una
+fase del juego por direcciones RAM: el operador debe anotar los tiempos de cada fase.
+
+- `AW runtime`: intervalo wall, VBlanks, bytes DMA del intervalo, palabras muestreadas,
+  extrapolación de elapsed del bucle DMA **del intervalo** y asignación ROM nominal.
+  Si `sampled_words=0`, cero estimado significa sin muestra, no coste medido nulo.
+- `AW host` (Windows): `GetProcessTimes` entrega CPU user+kernel acumulada de todos
+  los hilos; `cpu_total_ms` desde el inicio del proceso, `cpu_ms` delta del intervalo,
+  porcentaje equivalente a **un core** (puede superar 100 %) y ms/VBlank. `cpu_valid`
+  valida deltas; la primera muestra no tiene delta. `cpu_total_valid` valida total.
+- `K32GetProcessMemoryInfo`: private commit (`private_bytes`), working set residente,
+  pico de working set y pico de commit del proceso desde su inicio. No representan
+  VRAM GPU dedicada ni atribución por subsistema; el tamaño ROM nominal no prueba
+  residencia física. `memory_valid=0` invalida la muestra. Otros SO reportan no disponible.
+- El resumen acumulado `AW decrypt profile` aparece al cambiar contadores. La CPU
+  global **incluye** render/audio/guest/logging; no atribuye `DECORD_TASK` a CPU propia.
+  Pausa y reanudación generan registros; excluir intervalos de pausa del combate.
+  VBlank no equivale necesariamente a frame presentado o frame único bajo rollback.
+
+Receta para la próxima corrida (no aceptación G3):
+
+1. Abrir `build-windows-msvc-profile/Release/flycast.exe`, `Log to File` activo;
+   comenzar con un proceso nuevo. No activar dumps, GDB, fast-forward ni savestates.
+2. Anotar tiempos aproximados: título, character/order select, inicio de combate y
+   final. Mantener 10 s en selección, jugar al menos 60 s y provocar cargas entre
+   combates/equipos. Cerrar normalmente. No borrar el log con Flycast abierto.
+3. Comparar ventanas estables y de carga separadas: CPU ms/VBlank, private/working
+   set/picos, bytes DMA y elapsed estimado DMA. Conservar cambios de equipo/escenario
+   y configuración iguales al repetir. Recoger CPU/GPU/SO/drivers en el informe.
+4. Confirmar hipótesis material con medición A/B de overhead contra Release stock;
+   estas consultas OS y el log tienen coste, cargado en parte al intervalo siguiente.
+
+Smoke local del 2026-10-28: i7-9750H (6C/12T), Windows 11 Pro 10.0.26200,
+RTX 2070 Max-Q driver 32.0.16.1047; DX11 480p, dynarec activo, sin GDB/dumps,
+perfil de energía/térmica no fijado (no benchmark de rendimiento).
+Build SHA-256 `712D8CDC867BB0095ECF2AEE626AF933ECA5AFCF155AB3658B40537672F08402`.
+Arranque automático de `roms/kofxi.zip`, 12 s, sin input
+ni combate, cierre mediante `CloseMainWindow`, exit code 0. Se observaron muestras
+periódicas con `memory_valid=1` y CPU válida, incluida ventana sin DMA, y muestra de
+pausa al salir. ROM nominal 335.544.320 bytes. Esto valida el logger, no el ahorro
+ni la equivalencia ni el recorrido de pelea. La revisión final emitió 7 pares
+runtime/host; se verificó que la suma de llamadas/palabras EPR+MPR-record+MPR-file
+coincide con el total en todos los resúmenes de esa corrida. El log local conserva
+estas corridas smoke anexadas para inspección. ROM/BIOS/log bruto no versionados.
+
 ## Puerta de decisión
 
 - **Descartar la línea** si el perfil muestra que el descifrado es insignificante

@@ -166,6 +166,10 @@ ROM board internal layouts:
 
 #ifdef AW_CARTRIDGE_PROFILE
 #include <chrono>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#endif
 #endif
 
 enum { EPR, MPR_RECORD, MPR_FILE };
@@ -352,7 +356,68 @@ u16 AWCartridge::decrypt16(u32 address) {
 #ifdef AW_CARTRIDGE_PROFILE
 AWCartridge::~AWCartridge()
 {
+	if (profile_listening)
+	{
+		for (Event event : {Event::VBlank, Event::Pause, Event::Resume, Event::Terminate})
+			EventManager::unlisten(event, ProfileEvent, this);
+	}
 	DumpProfile();
+}
+
+void AWCartridge::ProfileEvent(Event event, void *param)
+{
+	auto *cart = static_cast<AWCartridge *>(param);
+	if (event == Event::VBlank)
+	{
+		// No clock/OS query per DMA word; also report when DMA is idle.
+		if (++cart->profile_frames % 120 != 0)
+			return;
+		cart->ReportRuntime("interval");
+	}
+	else
+		cart->ReportRuntime(event == Event::Pause ? "pause" : event == Event::Resume ? "resume" : "terminate");
+	cart->DumpProfile();
+}
+
+void AWCartridge::ReportRuntime(const char *reason)
+{
+	const u64 wall_ns = (u64)std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+	const double dt_ms = profile_last_wall_ns == 0 ? 0.0 : (wall_ns - profile_last_wall_ns) / 1e6;
+	const u64 frames = profile_frames - profile_last_frames;
+	const u64 words = profile_dma_words - profile_last_words;
+	const u64 sampled_words = profile_sampled_words - profile_last_sample_words;
+	const u64 sampled_ns = profile_sampled_ns - profile_last_sample_ns;
+	const double estimated_ms = sampled_words == 0 ? 0.0 : (double)sampled_ns / sampled_words * words / 1e6;
+	NOTICE_LOG(NAOMI, "AW runtime: reason=%s interval_ms=%.3f vblanks=%llu dma_bytes=%llu sampled_words=%llu estimated_dma_loop_ms=%.3f rom_allocation_bytes=%u",
+			reason, dt_ms, (unsigned long long)frames, (unsigned long long)(words * 2),
+			(unsigned long long)sampled_words, estimated_ms, RomSize);
+#ifdef _WIN32
+	FILETIME creation{}, exit{}, kernel{}, user{};
+	const bool cpu_ok = GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user) != 0;
+	const u64 cpu = (((u64)kernel.dwHighDateTime << 32) | kernel.dwLowDateTime)
+			+ (((u64)user.dwHighDateTime << 32) | user.dwLowDateTime);
+	const bool cpu_delta_ok = cpu_ok && profile_cpu_valid && dt_ms > 0;
+	const double cpu_ms = cpu_delta_ok ? (cpu - profile_last_cpu_100ns) / 1e4 : 0;
+	PROCESS_MEMORY_COUNTERS_EX memory{};
+	memory.cb = sizeof(memory);
+	const bool memory_ok = K32GetProcessMemoryInfo(GetCurrentProcess(),
+			 reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&memory), sizeof(memory)) != 0;
+	NOTICE_LOG(NAOMI, "AW host: cpu_valid=%d cpu_total_valid=%d cpu_total_ms=%.3f cpu_ms=%.3f cpu_one_core_pct=%.3f cpu_ms_per_vblank=%.3f memory_valid=%d private_bytes=%llu working_set_bytes=%llu peak_working_set_bytes=%llu peak_commit_bytes=%llu",
+			cpu_delta_ok, cpu_ok, cpu / 1e4, cpu_ms, cpu_delta_ok ? cpu_ms / dt_ms * 100.0 : 0.0,
+			cpu_delta_ok && frames != 0 ? cpu_ms / frames : 0.0, memory_ok,
+			(unsigned long long)memory.PrivateUsage, (unsigned long long)memory.WorkingSetSize,
+			(unsigned long long)memory.PeakWorkingSetSize, (unsigned long long)memory.PeakPagefileUsage);
+	profile_last_cpu_100ns = cpu;
+	profile_cpu_valid = cpu_ok;
+#else
+	NOTICE_LOG(NAOMI, "AW host: cpu_valid=0 memory_valid=0 platform_not_instrumented=1");
+#endif
+	profile_last_wall_ns = wall_ns;
+	profile_last_frames = profile_frames;
+	profile_last_words = profile_dma_words;
+	profile_last_sample_words = profile_sampled_words;
+	profile_last_sample_ns = profile_sampled_ns;
 }
 
 void AWCartridge::DumpProfile()
@@ -387,6 +452,15 @@ void AWCartridge::Init(LoadProgress *progress, std::vector<u8> *digest)
 	mpr_offset = decrypt16(0x58/2) | (decrypt16(0x5a/2) << 16);
 	INFO_LOG(NAOMI, "AWCartridge::SetKey rombd_key %02x mpr_offset %08x", rombd_key, mpr_offset);
 	device_reset();
+#ifdef AW_CARTRIDGE_PROFILE
+	if (!profile_listening)
+	{
+		for (Event event : {Event::VBlank, Event::Pause, Event::Resume, Event::Terminate})
+			EventManager::listen(event, ProfileEvent, this);
+		profile_listening = true;
+	}
+	ReportRuntime("cart-init");
+#endif
 }
 
 void AWCartridge::SetKey(u32 key)
@@ -460,8 +534,6 @@ void *AWCartridge::GetDmaPtr(u32 &size)
 		++profile_mpr_file_calls;
 		profile_mpr_file_words += size / 2;
 	}
-	if (profile_dma_calls == 1 || profile_dma_calls % 1048576 == 0)
-		DumpProfile();
 	const bool sample = size != 0 && (profile_dma_calls % 64 == 0);
 	const auto sample_start = sample ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 #endif
@@ -475,6 +547,8 @@ void *AWCartridge::GetDmaPtr(u32 &size)
 		++profile_sampled_blocks;
 		profile_sampled_words += size / 2;
 	}
+	if (profile_dma_calls == 1 || profile_dma_calls % 1048576 == 0)
+		DumpProfile();
 #endif
 
 //	printf("AWCART Decrypted data @ %08x:\n", dma_offset);
