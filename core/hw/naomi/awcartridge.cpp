@@ -164,6 +164,10 @@ ROM board internal layouts:
 #include "awave_regs.h"
 #include "serialize.h"
 
+#ifdef AW_CARTRIDGE_PROFILE
+#include <chrono>
+#endif
+
 enum { EPR, MPR_RECORD, MPR_FILE };
 
 
@@ -336,6 +340,21 @@ u16 AWCartridge::decrypt16(u32 address) {
 	return decrypt(((u16 *)RomPtr)[address % (RomSize / 2)], address, rombd_key);
 }
 
+#ifdef AW_CARTRIDGE_PROFILE
+AWCartridge::~AWCartridge()
+{
+	const double estimated_ns = profile_sampled_words == 0 ? 0.0
+			: (double)profile_sampled_ns / profile_sampled_words * profile_dma_words;
+	INFO_LOG(NAOMI, "AW decrypt profile: dma_calls=%llu dma_words=%llu sampled_blocks=%llu sampled_words=%llu sampled_ns=%llu estimated_dma_loop_elapsed_ns=%.0f",
+			(unsigned long long)profile_dma_calls,
+			(unsigned long long)profile_dma_words,
+			(unsigned long long)profile_sampled_blocks,
+			(unsigned long long)profile_sampled_words,
+			(unsigned long long)profile_sampled_ns,
+			estimated_ns);
+}
+#endif
+
 void AWCartridge::Init(LoadProgress *progress, std::vector<u8> *digest)
 {
 	mpr_offset = decrypt16(0x58/2) | (decrypt16(0x5a/2) << 16);
@@ -393,8 +412,23 @@ void *AWCartridge::GetDmaPtr(u32 &size)
 {
 	size = std::min(std::min(size, 32u), dma_limit - dma_offset);
 	u32 offset = dma_offset / 2;
+#ifdef AW_CARTRIDGE_PROFILE
+	++profile_dma_calls;
+	profile_dma_words += size / 2;
+	const bool sample = size != 0 && (profile_dma_calls % 64 == 0);
+	const auto sample_start = sample ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+#endif
 	for (u32 i = 0; i < size / 2; i++)
 		decrypted_buf[i] = decrypt16(offset + i);
+#ifdef AW_CARTRIDGE_PROFILE
+	if (sample)
+	{
+		profile_sampled_ns += (u64)std::chrono::duration_cast<std::chrono::nanoseconds>(
+				std::chrono::steady_clock::now() - sample_start).count();
+		++profile_sampled_blocks;
+		profile_sampled_words += size / 2;
+	}
+#endif
 
 //	printf("AWCART Decrypted data @ %08x:\n", dma_offset);
 //	for (int i = 0; i < 16; i++)

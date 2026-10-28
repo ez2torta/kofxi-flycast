@@ -34,6 +34,7 @@ catálogo pasan al [backlog](../tasks/backlog.md).
 | KOF-MEM | Memoria/runtime | Hallazgos parciales | Algunas estructuras y offsets documentados; distinguir direcciones SH-4, offset RAM y dirección host. |
 | KOF-PLAY | Gameplay/frame data | Parcial | Pilotos de acciones y transiciones; no generalizar al roster. |
 | KOF-QOL | Features de usuario | Propuesta | Hitboxes, training, frame data, input display, repetición y análisis. |
+| KOF-ROM | Cartucho Atomiswave | Pipeline local aclarado; atribución dinámica pendiente | [Imagen procesada vs. AWCartridge](studies/aw-rom-processing.md) distingue ROMs `.dec` de `fs_extracted/`; no es una feature aceptada ni autoriza redistribuir ROMs. |
 
 Los estados describen el catálogo en **este repo**; no declaran que la
 investigación original no exista. Ver el mapa en
@@ -46,6 +47,9 @@ Para importar/restaurar el fixture en un build local, ver
 [`local-test-save.md`](local-test-save.md).
 
 ## Esquema requerido por entrada
+
+Protocolo KOF-ROM: [benchmark de cartucho/G1ROM/recursos](studies/resource-benchmark-plan.md),
+con alternativas, gates numéricos y estimaciones de esfuerzo; aún sin resultados A/B.
 
 Cada ficha se crea desde [`ENTRY-TEMPLATE.md`](ENTRY-TEMPLATE.md) e incluye:
 

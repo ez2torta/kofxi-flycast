@@ -15,6 +15,9 @@ class AWCartridge: public Cartridge
 {
 public:
 	AWCartridge(u32 size) : Cartridge(size) {}
+#ifdef AW_CARTRIDGE_PROFILE
+	~AWCartridge() override;
+#endif
 
 	void Init(LoadProgress *progress = nullptr, std::vector<u8> *digest = nullptr) override;
 	u32 ReadMem(u32 address, u32 size) override;
@@ -40,4 +43,11 @@ private:
 	u16 decrypted_buf[16];
 
 	u32 dma_offset, dma_limit;
+#ifdef AW_CARTRIDGE_PROFILE
+	u64 profile_dma_calls = 0;
+	u64 profile_dma_words = 0;
+	u64 profile_sampled_blocks = 0;
+	u64 profile_sampled_words = 0;
+	u64 profile_sampled_ns = 0;
+#endif
 };

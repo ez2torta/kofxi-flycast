@@ -39,6 +39,9 @@ Un equipo no disponible bloquea su aceptación, no elimina la plataforma.
 1. Coordinar contratos y responsables: T00.
 2. Ejecutar en paralelo T01–T05 y T07 con sus rutas asignadas.
 3. T06 diseña protocolo/mock en paralelo; integración depende del contrato T00.
+   T05 tiene una [propuesta de benchmark ROM/G1ROM/recursos](kofxi/studies/resource-benchmark-plan.md)
+   coordinable con T01/T00/K01/K02/T08: cifras de diseño y esfuerzo estimado, sin
+   ahorro ni backend aceptados todavía.
 4. Cerrar inventario/baseline exploratorio; luego implementar G1 y fijar
    presupuestos antes de optimizar. T08–T11 dependen de sus entregables previos.
 5. Abrir el catálogo KOF XI (`docs/kofxi/`) como frente de conocimiento con
