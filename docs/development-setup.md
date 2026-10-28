@@ -127,8 +127,10 @@ misma carpeta de build.
 
 ## Estado de esta receta
 
-Los componentes VS/MSVC/CMake fueron detectados en la máquina al redactar esto,
-y el cache previo confirma MSVC. Sin embargo, esta receta **todavía no ha pasado
-una build completa de Flycast**: los submódulos no estaban inicializados y no se
-ejecutó el build después de configurarlos. El primer build tras preparar las
-dependencias será la aceptación de este setup.
+Validado el 2026-10-28 en Windows con Visual Studio 2022 Build Tools: se
+inicializaron los submódulos fijados por el repo, `cmake --preset windows-msvc`
+configuró con Visual Studio 17 2022 x64 y MSVC 19.44.35229.0, y el build
+`windows-msvc-debug` terminó generando `build-windows-msvc/Debug/flycast.exe`.
+Hubo warnings de compilación en código upstream/dependencias, pero no impidieron
+el build. Esta verificación no cubre ejecución del emulador, Release ni otros
+targets (Linux/Android/Switch).
