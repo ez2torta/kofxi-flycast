@@ -268,23 +268,28 @@ que puede cambiar durante el teardown. El tiempo es **elapsed wall time del bucl
 exclusivos; el muestreo evita llamar al reloj por cada palabra. Los registros usan
 nivel `NOTICE_LOG`, porque Release elimina `INFO_LOG` al compilar. Esto mide decrypt
 del DMA del cartucho AW, **no** la tarea guest `DECORD_TASK` ni descompresión G1ROM.
-El desglose extendido cuenta por separado EPR/MPR-record/MPR-file DMA y escrituras de
-índices/offsets AW, para distinguir búsquedas de registros G1ROM de lecturas de
-payload. La build diagnóstica se compila en `build-windows-msvc-profile/`, separada
-del Release funcional.
+El perfil desglosa EPR/MPR-record/MPR-file DMA y cuenta escrituras de índices/offsets
+AW para distinguir búsquedas de registros G1ROM de lecturas de payload. La build
+diagnóstica se compila en `build-windows-msvc-profile/`, separada del Release
+funcional.
 
 Estado a 2026-10-28: MSVC 19.44.35229.0, Release `/O2 /Ob2 /DNDEBUG`, macro
 `AW_CARTRIDGE_PROFILE`. El Release funcional preservado mantiene SHA-256
 `8B2ACBD44D09A9A060AD618B4DCAFBDEE62675302608635FDCE3F2C190276B6B`. El log confirma
 `THE KING OF FIGHTERS XI`, región 0; BIOS regional 1 no encontrado en `awbios`.
-Corrida hasta Order Select: 210.898 bloques DMA, 3.374.360 palabras de 16 bits,
-3.295 bloques muestreados, 52.720 palabras muestreadas y 3.271.000 ns observados;
-extrapolación ponderada 209.361.373 ns (~209 ms elapsed). Incluye bucle/llamada y
-posible preempción, no es CPU exclusivo ni una comparación A/B, y no separa búsquedas
-de payload. Se descubrió que `INFO_LOG` se elimina en Release; el perfil ahora usa
-`NOTICE_LOG`. Está en curso el desglose EPR/MPR para la siguiente corrida; no mide
-G1 decompression todavía ni permite decidir materialidad. No se tocó serialización,
-estado guest, scheduler, GGPO, dynarec ni código habilitado por defecto.
+Corrida limpia de log hasta Order Select (18:34): 216.365 bloques DMA, 3.461.832
+palabras de 16 bits: EPR 37.197 llamadas/595.144 palabras; MPR-record 2.126/34.016;
+MPR-file 177.042/2.832.672. Se observaron 19 escrituras del registro de índice,
+194 escrituras de índice inicial de archivo y 194 escrituras del offset bajo. Se
+muestrearon 3.380 bloques/54.080 palabras y 3.390.900 ns; extrapolación ponderada
+217.062.244 ns (~217 ms elapsed durante ~21 s de ejecución). El perfil confirma
+accesos MPR de registro y payload; los contadores son escrituras/transferencias, no
+194 archivos únicos ni necesariamente 19 búsquedas lógicas distintas. Incluye
+bucle/llamada y posible preempción; no es CPU exclusivo ni comparación A/B. Se
+descubrió que `INFO_LOG` se elimina en Release; `NOTICE_LOG` dejó visible la captura.
+No mide G1 decompression guest, RAM pico ni corrida sostenida, por lo que no permite
+decidir materialidad. No se tocó serialización, estado guest, scheduler, GGPO,
+dynarec ni código habilitado por defecto.
 
 ## Puerta de decisión
 
