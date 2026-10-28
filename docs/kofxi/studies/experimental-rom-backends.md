@@ -1,4 +1,4 @@
-# Backends ROM experimentales de KOF XI (B/C)
+# Backends ROM experimentales de KOF XI (B/C/D)
 
 Fecha: 2026-10-28. Responsable: agente de esta sesión, T05, rama
 `experiment/kofxi-rom-resource-benchmark`. Prioridad/aceptación: [roadmap](../../roadmap.md).
@@ -17,6 +17,7 @@ local ya compilado). Por defecto siempre se usa `AWCartridge` original.
 | `original` | `roms/kofxi.zip`, AWCartridge | 320 MiB heap lógico con huecos |
 | `segmented` | Mismo ZIP cifrado, ocho segmentos | 232 MiB + metadatos; huecos virtuales `0xff` |
 | `decrypted` | Mismo ZIP como referencia + ocho chips `.dec` | 232 MiB + metadatos tras validar; sin copia cifrada retenida |
+| `extracted` | ZIP de referencia + manifest/payloads `fs_extracted` | Archivos mapeados read-only + fallback cifrado compacto; Windows |
 
 No se requieren archivos nuevos del usuario: en este equipo existe
 `E:/github/kofxi_aw_modding/decrypted`. Se necesitan los ocho nombres originales
@@ -30,6 +31,7 @@ Desde PowerShell en la raíz del repo, **una corrida por vez**:
 .\scripts\run-kofxi-rom-benchmark.ps1 -Backend original
 .\scripts\run-kofxi-rom-benchmark.ps1 -Backend segmented
 .\scripts\run-kofxi-rom-benchmark.ps1 -Backend decrypted
+.\scripts\run-kofxi-rom-benchmark.ps1 -Backend extracted
 # Ruta alternativa:
 .\scripts\run-kofxi-rom-benchmark.ps1 -Backend decrypted -DecryptedPath 'D:\mis chips\decrypted'
 # Inspeccionar sin arrancar:
@@ -41,6 +43,8 @@ diagnósticos, fuerza logging, GGPO desactivado, BIOS real y auto-savestates des
 mediante valores **transitorios**. Cada ejecución imprime su ruta de log/metadata:
 `build-windows-msvc-profile/Release/rom-benchmark-runs/<fecha>-<backend>/flycast.log`.
 `run.json` conserva argumentos y SHA-256 del EXE y ZIP; no copia ROM ni saves.
+Para D, `-ExtractedPath 'D:\mis archivos\fs_extracted'` sustituye la ruta por defecto
+`E:\github\kofxi_aw_modding\fs_extracted`; no requiere los `.dec`.
 La configuración, BIOS y NVRAM siguen junto al EXE, no se restauran automáticamente.
 Todos estos artefactos de build permanecen fuera del versionado.
 
@@ -110,9 +114,9 @@ contra el Release stock preservado para cuantificar el overhead del laboratorio.
 El tiempo de validación entra en CPU total y picos desde inicio del proceso: separar
 arranque/validación de carga guest y combate, sin ocultar el coste inicial.
 
-`fs_extracted` **no está implementado**: faltan EPR/tablas/padding y política de
-fallback por rango para un proveedor D completo. Tampoco se elimina la descompresión
-guest `DECORD_TASK`. No se distribuyen ROM, chips `.dec` ni assets extraídos.
+La implementación D posterior se describe abajo; B/C por sí solos no leen
+`fs_extracted`. Ninguna variante elimina la descompresión guest `DECORD_TASK`.
+No se distribuyen ROM, chips `.dec` ni assets extraídos.
 
 ## Pareja manual B/C del usuario (2026-10-28, 19:56–20:01)
 
@@ -171,3 +175,101 @@ trabajo host en cargas, pero el beneficio de CPU sostenida sigue sin demostrar.
 Próximo control: A/B/C con este mismo EXE, mismos seis personajes/stage, tiempos de
 fase anotados y orden alternado; después anclas/estado y pares repetidos del plan.
 No iniciar backend `fs_extracted` ni parche guest basándose solo en estos promedios.
+
+## Variante D posterior: `fs_extracted` mapeado (autorización explícita del usuario)
+
+El usuario pidió probar D aunque la pareja B/C no acreditara beneficio de CPU
+sostenida. No se cambia esa conclusión ni se introduce un parche guest.
+
+```powershell
+.\scripts\run-kofxi-rom-benchmark.ps1 -Backend extracted
+# Opcional, otra ruta:
+.\scripts\run-kofxi-rom-benchmark.ps1 -Backend extracted -ExtractedPath 'D:\fs_extracted'
+```
+
+Selector manual: `-config 'kofxi:RomBackend=extracted'` y
+`-config 'kofxi:ExtractedPath=E:\github\kofxi_aw_modding\fs_extracted'`, además de
+las restricciones offline/BIOS real anteriores. Solo disponible en Windows por
+ahora; otras plataformas rechazan esta variante explícitamente.
+
+### Contrato y datos conservados
+
+1. Carga temporalmente los chips cifrados segmentados desde el ZIP como referencia.
+2. Valida magic y registros G1ROM contra la referencia, no solo contra el manifest.
+   Exige índices únicos, nombre original/offset/tamaño correctos y todas las entradas
+   de archivo reconocidas. Rechaza nombres con directorios/`..`, números/rangos
+   inválidos, archivos ausentes, tamaños incorrectos, bytes distintos y solapamientos.
+3. Abre los payloads con `CreateFileW` sin compartir escritura/borrado, y mapea vistas
+   read-only. Compara **cada byte** con el descifrado AW a su dirección física. El
+   offset lógico MPR se resuelve por el catálogo de siete chips, no sumando un único
+   offset físico: conserva los huecos/bancos. No utiliza chips `.dec` como referencia.
+4. Desmapea/remapea cada archivo después de validarlo para no retener deliberadamente
+   todas sus páginas verificadas en el working set. Mantiene el handle abierto para
+   impedir modificaciones concurrentes mientras se juega. Los diez archivos vacíos
+   se verifican sin crear una vista de tamaño cero.
+5. Conserva en heap cifrado solo los intervalos sin payload extraído (EPR, tablas,
+   padding y otros bytes no cubiertos). Los huecos entre chips siguen virtuales.
+   Para payloads impares, el word de borde queda en fallback: nunca mezcla media
+   palabra cifrada con media descifrada. PIO reconstruye los words crudos mediante
+   el cifrado inverso; no cambia registros, avance ni temporización DMA.
+6. Compara el proveedor final con snapshots independientes de la ROM cifrada en
+   ambos lados de **todos** los bordes de archivos/chips/huecos: plaintext, PIO y
+   lecturas impares de tres bytes. Reinicia esos contadores de prueba antes del guest.
+
+Datos locales: 1.057 filas validadas, 1.047 archivos no vacíos mapeados,
+230.533.911 bytes de archivos, 1.051 spans físicos y 973 rangos de fallback cifrado
+con 12.735.980 bytes (~12,15 MiB). El tamaño lógico almacenado/representado es
+243.269.891 bytes: incluye 259 bytes de bordes duplicados entre mapping y fallback.
+**No es un cartucho completo adicional** ni se escriben recursos procesados.
+
+### Instrumentación, receta y límites
+
+`KOF XI extracted profile` registra `mapped_files`, `mapped_file_bytes`,
+`fallback_heap_bytes`, `mapped_word_reads` y `fallback_word_reads`. Estos últimos
+incluyen consultas de metadatos/boot y DMA por palabra, no archivos únicos ni PIO.
+El resumen genérico sigue registrando CPU, memoria y modos DMA. Un nombre histórico
+`AW decrypt profile` mide el bucle proveedor+copy, incluso cuando los bytes provienen
+del mapping y no se descifran.
+
+`mapped_file_bytes` es extensión lógica de las vistas, **no RAM residente actual**.
+Leer esos archivos puede cargar páginas y consumir memoria compartida/caché OS.
+El working set y los picos del proceso son imprescindibles; bajar private commit
+no demuestra por sí solo una reducción equivalente de memoria física del sistema.
+La validación inicial todavía carga los chips originales y afecta los picos desde
+inicio del proceso. No ocultar su coste ni usarlo como tiempo de carga guest.
+
+Receta: mismo launcher/EXE para A/B/C/D, misma configuración, selección/equipo/stage,
+anotar tiempos de fase, jugar un stage y cerrar normalmente. No ejecutar tooling
+que intente modificar `fs_extracted` durante la corrida (handles read-only bloquean
+escritura). Registrar primera ejecución y caliente por separado; no se ha medido
+overhead ni estabilidad a largo plazo de la búsqueda binaria de spans/archivos.
+
+### Evidencia local del 2026-10-28
+
+Build MSVC Release diagnóstica SHA-256
+`259D122CD917A54360225510443203F7D99CEBBEFED4602E26B9C7060D8D5696`, mismo host
+i7-9750H/Windows 11/DX11 descrito arriba, energía/térmica sin fijar. Smoke sin input
+de 40 s desde inicio de proceso y cierre normal; log local
+`rom-benchmark-runs/20261028-201213-847-extracted/flycast.log`:
+
+- 1.057 entradas/230.533.911 bytes verificados y **10.584 checks de bordes aprobados**.
+- KOF XI arrancó, hubo muestras periódicas y lecturas reales tanto mapeadas como
+  fallback: al cerrar, 3.112.994 y 631.278 words respectivamente. Sin errores logueados.
+- Cart-init a 10,243 s: private commit 224.595.968 bytes (~214,19 MiB), working set
+  239.652.864; picos de proceso WS 482.955.264 y commit 468.422.656 por validación.
+  Es evidencia del logger/backend, **no comparación de combate ni ahorro aceptado**.
+- B y C regresionados con ese mismo EXE: arranque, muestras periódicas, cierre normal;
+  C verificó nuevamente sus ocho chips.
+- Negativos con manifest/archivo **sintéticos**, sin editar los assets del usuario:
+  manifest ausente, índice no numérico, tamaño incorrecto y contenido discordante
+  rechazados antes de runtime. No hubo fallback silencioso a un driver distinto.
+- Rebuild final (include explícito de `<memory>`) y smoke adicional de 25 s:
+  `rom-benchmark-runs/20261028-201652-177-extracted/flycast.log`, mismas verificaciones
+  de archivos/bordes aprobadas y runtime periódico sin errores. SHA-256 del EXE
+  **actual**: `DD605A839C5C0C6240F3EC048D26A515D4152613DCF63FCE0EEC66328ADCA55A`.
+  `ClCompile` sin el macro también aprobado; no se enlazó ni reemplazó el stock,
+  cuyo SHA-256 sigue siendo el registrado en B/C.
+
+Pendientes: stage humano con D, anclas de estado y trazas guest/PIO en ejecución,
+restauración/rollback, pares A/B repetidos y otros SO/arquitecturas. Verificar bordes
+y archivos en arranque no demuestra fidelidad hardware ni equivalencia universal.

@@ -10,6 +10,9 @@
  */
 #pragma once
 #include "naomi_cart.h"
+#ifdef AW_CARTRIDGE_PROFILE
+#include <memory>
+#endif
 
 class AWCartridge: public Cartridge
 {
@@ -37,6 +40,7 @@ protected:
 	virtual u16 cipherWord(u32 address) const;
 	virtual u16 decrypt16(u32 address);
 	virtual u64 profileStorageBytes() const { return RomSize; }
+	virtual void profileBackendReport() const {}
 #else
 	u16 decrypt16(u32 address);
 #endif
@@ -90,7 +94,7 @@ private:
 class KOFXIExperimentalCartridge final : public AWCartridge
 {
 public:
-	KOFXIExperimentalCartridge(u32 size, bool decrypted, const std::string& directory);
+	KOFXIExperimentalCartridge(u32 size, const std::string& backend, const std::string& directory);
 	void *GetPtr(u32 offset, u32& size) override;
 	bool Read(u32 offset, u32 size, void *dst) override;
 	void Init(LoadProgress *progress, std::vector<u8> *digest) override;
@@ -98,6 +102,7 @@ protected:
 	u16 cipherWord(u32 address) const override;
 	u16 decrypt16(u32 address) override;
 	u64 profileStorageBytes() const override;
+	void profileBackendReport() const override;
 private:
 	struct Segment {
 		u32 offset;
@@ -106,8 +111,21 @@ private:
 		bool decoded = false;
 	};
 	const Segment *findSegment(u32 offset) const;
+	struct MappedAsset;
+	struct AssetSpan {
+		u32 offset, size, fileOffset;
+		std::shared_ptr<MappedAsset> asset;
+	};
+	const AssetSpan *findAsset(u32 offset) const;
+	void initExtracted(LoadProgress *progress);
+	std::vector<AssetSpan> assets;
+	u64 mappedBytes = 0;
+	u64 mappedFiles = 0;
+	u64 mappedWordReads = 0;
+	u64 fallbackWordReads = 0;
 	std::vector<Segment> segments;
 	bool useDecrypted;
+	bool useExtracted;
 	std::string directory;
 	u8 key = 0xd3;
 };

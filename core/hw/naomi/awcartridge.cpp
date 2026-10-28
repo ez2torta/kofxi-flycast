@@ -169,6 +169,9 @@ ROM board internal layouts:
 #include "naomi_roms.h"
 #include "oslib/oslib.h"
 #include <memory>
+#include <algorithm>
+#include <sstream>
+#include "nowide/stackstring.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
@@ -397,23 +400,300 @@ static u16 encryptWord(u16 plain, u32 address, u8 key)
 	return cipher;
 }
 
-KOFXIExperimentalCartridge::KOFXIExperimentalCartridge(u32 size, bool decrypted, const std::string& path)
-	: AWCartridge(0), useDecrypted(decrypted), directory(path)
+struct KOFXIExperimentalCartridge::MappedAsset
+{
+	const u8 *data = nullptr;
+#ifdef _WIN32
+	HANDLE file = INVALID_HANDLE_VALUE;
+	~MappedAsset()
+	{
+		if (data != nullptr)
+			UnmapViewOfFile(data);
+		if (file != INVALID_HANDLE_VALUE)
+			CloseHandle(file);
+	}
+	void map()
+	{
+		HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+		if (mapping == nullptr)
+			throw NaomiCartException("Cannot create extracted asset mapping");
+		data = static_cast<const u8 *>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0));
+		CloseHandle(mapping);
+		if (data == nullptr)
+			throw NaomiCartException("Cannot map extracted asset");
+	}
+#endif
+};
+
+const KOFXIExperimentalCartridge::AssetSpan *KOFXIExperimentalCartridge::findAsset(u32 offset) const
+{
+	auto it = std::upper_bound(assets.begin(), assets.end(), offset,
+			[](u32 pos, const AssetSpan& span) { return pos < span.offset; });
+	if (it != assets.begin())
+	{
+		--it;
+		if (offset - it->offset < it->size)
+			return &*it;
+	}
+	return nullptr;
+}
+
+void KOFXIExperimentalCartridge::profileBackendReport() const
+{
+	if (!useExtracted)
+		return;
+	u64 heap = 0;
+	for (const auto& segment : segments)
+		heap += segment.data.size();
+	NOTICE_LOG(NAOMI, "KOF XI extracted profile: mapped_files=%llu mapped_file_bytes=%llu fallback_heap_bytes=%llu mapped_word_reads=%llu fallback_word_reads=%llu",
+			(unsigned long long)mappedFiles, (unsigned long long)mappedBytes, (unsigned long long)heap,
+			(unsigned long long)mappedWordReads, (unsigned long long)fallbackWordReads);
+}
+
+void KOFXIExperimentalCartridge::initExtracted(LoadProgress *progress)
+{
+#ifndef _WIN32
+	throw NaomiCartException("The extracted-file mapping experiment currently requires Windows");
+#else
+	// G1ROM offsets describe a packed sequence of seven MROMs, not physical
+	// cartridge addresses. Resolve every slice through the catalogue, including banks.
+	constexpr u32 chipSize = 0x2000000;
+	constexpr u32 mprSize = chipSize * 7;
+	u32 cachedAddress = ~0u;
+	u16 cachedWord = 0;
+	auto referenceByte = [&](u32 logical) -> u8 {
+		if (logical >= mprSize)
+			throw NaomiCartException("G1ROM offset outside KOF XI MPR data");
+		const auto& chip = segments[1 + logical / chipSize];
+		u32 i = logical % chipSize;
+		u32 address = (chip.offset + (i & ~1u)) / 2;
+		if (cachedAddress != address)
+		{
+			u16 raw = chip.data[i & ~1u] | (chip.data[(i & ~1u) + 1] << 8);
+			cachedWord = decrypt(raw, address, key);
+			cachedAddress = address;
+		}
+		return (u8)(cachedWord >> ((i & 1) * 8));
+	};
+	auto reference32 = [&](u32 logical) {
+		u32 value = 0;
+		for (u32 i = 0; i < 4; ++i)
+			value |= (u32)referenceByte(logical + i) << (8 * i);
+		return value;
+	};
+	const char magic[] = "G1ROM FILESYSTEM";
+	for (u32 i = 0; i < 16; ++i)
+		if (referenceByte(i) != (u8)magic[i])
+			throw NaomiCartException("KOF XI G1ROM header mismatch");
+	u32 records = reference32(16);
+	if (records < 2 || records > 4096)
+		throw NaomiCartException("Invalid KOF XI G1ROM record count");
+	std::vector<bool> seen(records, false);
+	std::string manifestPath = directory + "/_manifest.txt";
+	std::unique_ptr<FILE, decltype(&fclose)> manifest(nowide::fopen(manifestPath.c_str(), "rb"), fclose);
+	if (!manifest)
+		throw NaomiCartException("Cannot open extracted manifest: " + manifestPath);
+	char line[2048];
+	u32 rows = 0;
+	while (fgets(line, sizeof(line), manifest.get()))
+	{
+		if (progress != nullptr && progress->cancelled)
+			throw LoadCancelledException();
+		std::string text(line);
+		if (text.empty() || text[0] == '#' || text == "\n" || text == "\r\n")
+			continue;
+		if (text.back() != '\n' && !feof(manifest.get()))
+			throw NaomiCartException("Oversized extracted manifest row");
+		while (!text.empty() && (text.back() == '\r' || text.back() == '\n'))
+			text.pop_back();
+		std::istringstream stream(text);
+		std::string fields[5], extra;
+		for (auto& field : fields)
+			if (!std::getline(stream, field, '\t'))
+				throw NaomiCartException("Malformed extracted manifest row");
+		if (std::getline(stream, extra, '\t'))
+			throw NaomiCartException("Extra extracted manifest columns");
+		auto number = [](const std::string& field, int base) -> u32 {
+			if (field.empty() || field[0] == '-' || field[0] == '+')
+				throw NaomiCartException("Invalid extracted manifest number");
+			try {
+				size_t count;
+				u64 value = std::stoull(field, &count, base);
+				if (count != field.size() || value > 0xffffffffu)
+					throw NaomiCartException("Extracted manifest number out of range");
+				return (u32)value;
+			} catch (const std::invalid_argument&) {
+				throw NaomiCartException("Invalid extracted manifest number");
+			} catch (const std::out_of_range&) {
+				throw NaomiCartException("Extracted manifest number out of range");
+			}
+		};
+		u32 index = number(fields[0], 10), offset = number(fields[2], 16), size = number(fields[3], 10);
+		if (index == 0 || index >= records || seen[index] || offset > mprSize || size > mprSize - offset)
+			throw NaomiCartException("Invalid/duplicate extracted manifest range");
+		seen[index] = true;
+		u32 record = index * 64;
+		std::string originalName;
+		for (u32 i = 0; i < 16; ++i)
+		{
+			u8 ch = referenceByte(record + 16 + i);
+			if (ch == 0)
+				break;
+			originalName += (char)ch;
+		}
+		if (referenceByte(record + 7) == 0x40 || fields[1] != originalName
+				|| reference32(record + 8) != offset || reference32(record + 12) != size)
+			throw NaomiCartException("Extracted manifest differs from G1ROM record");
+		const std::string& name = fields[4];
+		if (name.empty() || name.find_first_of("/\\:") != std::string::npos || name.find("..") != std::string::npos)
+			throw NaomiCartException("Unsafe extracted asset filename");
+		std::string path = directory + "/" + name;
+		auto asset = std::make_shared<MappedAsset>();
+		nowide::wstackstring wide;
+		if (!wide.convert(path.c_str()))
+			throw NaomiCartException("Invalid extracted asset path encoding");
+		asset->file = CreateFileW(wide.get(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		LARGE_INTEGER length{};
+		if (asset->file == INVALID_HANDLE_VALUE || !GetFileSizeEx(asset->file, &length) || length.QuadPart != size)
+			throw NaomiCartException("Missing/wrong-sized extracted asset: " + path);
+		if (size != 0)
+		{
+			asset->map();
+			for (u32 i = 0; i < size; ++i)
+			{
+				if ((i & 0xffff) == 0 && progress != nullptr && progress->cancelled)
+					throw LoadCancelledException();
+				if (asset->data[i] != referenceByte(offset + i))
+					throw NaomiCartException("Extracted asset differs from ROM reference: " + path);
+			}
+			// Verification must not keep every validated page in this process's WS.
+			// Keep the file open without write/delete sharing; remap for demand paging.
+			UnmapViewOfFile(asset->data);
+			asset->data = nullptr;
+			asset->map();
+			mappedBytes += size;
+			++mappedFiles;
+			// Leave odd boundary words encrypted in fallback. AW DMA serves words,
+			// so no half-plaintext/half-ciphertext word is ever reconstructed.
+			u32 begin = (offset + 1) & ~1u, end = (offset + size) & ~1u;
+			while (begin < end)
+			{
+				u32 chip = begin / chipSize, within = begin % chipSize;
+				u32 count = std::min(end - begin, chipSize - within);
+				assets.push_back({segments[chip + 1].offset + within, count, begin - offset, asset});
+				begin += count;
+			}
+		}
+		++rows;
+		if (progress != nullptr)
+		{
+			static std::string label;
+			label = "Verifying extracted " + name;
+			progress->label = label.c_str();
+			progress->progress = (float)rows / (records - 1);
+		}
+	}
+	if (ferror(manifest.get()))
+		throw NaomiCartException("Cannot read extracted manifest");
+	for (u32 index = 1; index < records; ++index)
+		if (referenceByte(index * 64 + 7) != 0x40 && referenceByte(index * 64 + 16) != 0
+				&& reference32(index * 64 + 12) < 0x10000000 && !seen[index])
+			throw NaomiCartException("Extracted manifest omits a G1ROM file");
+	std::sort(assets.begin(), assets.end(), [](const AssetSpan& a, const AssetSpan& b) { return a.offset < b.offset; });
+	for (size_t i = 1; i < assets.size(); ++i)
+		if (assets[i - 1].offset + assets[i - 1].size > assets[i].offset)
+			throw NaomiCartException("Overlapping extracted asset ranges");
+	// Capture independent encrypted reference words before compacting storage.
+	// Exercise both sides of every file/chip/gap boundary through the finished
+	// provider, including odd raw reads that cross a word or an asset boundary.
+	struct Check { u32 offset; u16 raw, plain; u32 rawPair; };
+	std::vector<Check> checks;
+	auto sourceWord = [&](u32 pos) -> u16 {
+		const auto *segment = findSegment(pos);
+		if (segment == nullptr)
+			return 0xffff;
+		u32 i = pos - segment->offset;
+		return segment->data[i] | (segment->data[i + 1] << 8);
+	};
+	auto checkBoundary = [&](u32 boundary) {
+		for (int delta = -4; delta <= 4; delta += 2)
+		{
+			int64_t pos = (int64_t)boundary + delta;
+			if (pos < 0 || pos + 4 > RomSize)
+				continue;
+			u16 raw = sourceWord((u32)pos);
+			checks.push_back({(u32)pos, raw, decrypt(raw, (u32)pos / 2, key),
+					(u32)raw | ((u32)sourceWord((u32)pos + 2) << 16)});
+		}
+	};
+	for (const auto& span : assets)
+	{
+		checkBoundary(span.offset);
+		checkBoundary(span.offset + span.size);
+	}
+	for (const auto& segment : segments)
+	{
+		checkBoundary(segment.offset);
+		checkBoundary(segment.offset + (u32)segment.data.size());
+	}
+	std::vector<Segment> fallback;
+	for (const auto& segment : segments)
+	{
+		u32 cursor = segment.offset, end = cursor + (u32)segment.data.size();
+		auto retain = [&](u32 first, u32 last) {
+			if (first < last)
+				fallback.push_back({first, segment.filename,
+						std::vector<u8>(segment.data.begin() + first - segment.offset,
+								segment.data.begin() + last - segment.offset), false});
+		};
+		for (const auto& span : assets)
+		{
+			if (span.offset < segment.offset || span.offset >= end)
+				continue;
+			retain(cursor, span.offset);
+			cursor = span.offset + span.size;
+		}
+		retain(cursor, end);
+	}
+	segments.swap(fallback); // Original encrypted chips are released when this function returns.
+	for (const auto& check : checks)
+	{
+		u8 raw[3];
+		Read(check.offset + 1, sizeof(raw), raw);
+		if (cipherWord(check.offset / 2) != check.raw || decrypt16(check.offset / 2) != check.plain
+				|| raw[0] != ((check.rawPair >> 8) & 255) || raw[1] != ((check.rawPair >> 16) & 255)
+				|| raw[2] != (check.rawPair >> 24))
+			throw NaomiCartException("Extracted backend boundary/PIO equivalence check failed");
+	}
+	mappedWordReads = fallbackWordReads = 0; // Do not count synthetic checks as guest traffic.
+	NOTICE_LOG(NAOMI, "KOF XI extracted validated_files=%u mapped_file_bytes=%llu physical_spans=%u fallback_ranges=%u",
+			rows, (unsigned long long)mappedBytes, (u32)assets.size(), (u32)segments.size());
+	NOTICE_LOG(NAOMI, "KOF XI extracted boundary_checks=%u raw_PIO_plaintext_and_odd_reads=passed", (u32)checks.size());
+#endif
+}
+
+KOFXIExperimentalCartridge::KOFXIExperimentalCartridge(u32 size, const std::string& backend, const std::string& path)
+	: AWCartridge(0), useDecrypted(backend == "decrypted"), useExtracted(backend == "extracted"), directory(path)
 {
 	RomSize = size;
 }
 
 const KOFXIExperimentalCartridge::Segment *KOFXIExperimentalCartridge::findSegment(u32 offset) const
 {
-	for (const auto& segment : segments)
-		if (offset >= segment.offset && offset - segment.offset < segment.data.size())
-			return &segment;
+	auto it = std::upper_bound(segments.begin(), segments.end(), offset,
+			[](u32 pos, const Segment& segment) { return pos < segment.offset; });
+	if (it != segments.begin())
+	{
+		--it;
+		if (offset - it->offset < it->data.size())
+			return &*it;
+	}
 	return nullptr;
 }
 
 u64 KOFXIExperimentalCartridge::profileStorageBytes() const
 {
-	u64 bytes = 0;
+	u64 bytes = mappedBytes;
 	for (const auto& segment : segments)
 		bytes += segment.data.size();
 	return bytes;
@@ -440,6 +720,11 @@ void *KOFXIExperimentalCartridge::GetPtr(u32 offset, u32& size)
 
 u16 KOFXIExperimentalCartridge::cipherWord(u32 address) const
 {
+	if (const auto *span = findAsset(address * 2))
+	{
+		const u8 *p = span->asset->data + span->fileOffset + address * 2 - span->offset;
+		return encryptWord(p[0] | (p[1] << 8), address, key);
+	}
 	const auto *segment = findSegment(address * 2);
 	if (segment == nullptr)
 		return 0xffff;
@@ -451,6 +736,14 @@ u16 KOFXIExperimentalCartridge::cipherWord(u32 address) const
 u16 KOFXIExperimentalCartridge::decrypt16(u32 address)
 {
 	u32 physical = address % (RomSize / 2);
+	if (const auto *span = findAsset(physical * 2))
+	{
+		++mappedWordReads;
+		const u8 *p = span->asset->data + span->fileOffset + physical * 2 - span->offset;
+		return p[0] | (p[1] << 8);
+	}
+	if (useExtracted)
+		++fallbackWordReads;
 	const auto *segment = findSegment(physical * 2);
 	if (segment != nullptr && segment->decoded)
 	{
@@ -510,9 +803,11 @@ void KOFXIExperimentalCartridge::Init(LoadProgress *progress, std::vector<u8> *d
 		segment.decoded = true;
 		NOTICE_LOG(NAOMI, "KOF XI verified chip=%s bytes=%u PIO_inverse=passed", segment.filename.c_str(), (u32)segment.data.size());
 	}
+	if (useExtracted)
+		initExtracted(progress);
 	NOTICE_LOG(NAOMI, "KOF XI backend=%s logical_bytes=%u stored_bytes=%llu validation=%s offline_only=1",
-			useDecrypted ? "decrypted" : "segmented", RomSize, (unsigned long long)bytes,
-			useDecrypted ? "all_chip_words_and_PIO_inverse" : "catalogued_segments");
+			useExtracted ? "extracted" : useDecrypted ? "decrypted" : "segmented", RomSize, (unsigned long long)profileStorageBytes(),
+			useExtracted ? "all_extracted_bytes_and_G1_records" : useDecrypted ? "all_chip_words_and_PIO_inverse" : "catalogued_segments");
 	AWCartridge::Init(progress, digest);
 }
 
@@ -580,6 +875,7 @@ void AWCartridge::ReportRuntime(const char *reason)
 	profile_last_words = profile_dma_words;
 	profile_last_sample_words = profile_sampled_words;
 	profile_last_sample_ns = profile_sampled_ns;
+	profileBackendReport();
 }
 
 void AWCartridge::DumpProfile()

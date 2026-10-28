@@ -278,10 +278,10 @@ static void loadMameRom(const std::string& path, const std::string& fileName, Lo
 			{
 				if (std::string(game->name) != "kofxi" || config::GGPOEnable || config::UseReios)
 					throw NaomiCartException("Experimental ROM backends require KOF XI offline, real AW BIOS, GGPO disabled");
-				if (backend != "segmented" && backend != "decrypted")
-					throw NaomiCartException("Unknown kofxi RomBackend (original/segmented/decrypted)");
-				CurrentCartridge = new KOFXIExperimentalCartridge(game->size, backend == "decrypted",
-						config::loadStr("kofxi", "DecryptedPath", ""));
+				if (backend != "segmented" && backend != "decrypted" && backend != "extracted")
+					throw NaomiCartException("Unknown kofxi RomBackend (original/segmented/decrypted/extracted)");
+				CurrentCartridge = new KOFXIExperimentalCartridge(game->size, backend,
+						config::loadStr("kofxi", backend == "extracted" ? "ExtractedPath" : "DecryptedPath", ""));
 				break;
 			}
 			NOTICE_LOG(NAOMI, "KOF XI/AW backend=original logical_bytes=%u", game->size);
