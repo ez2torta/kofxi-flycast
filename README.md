@@ -12,6 +12,7 @@ aceptados ni servidor implementado todavía. Nombre provisional `kofxi-flycast`.
 - [Tareas paralelizables](docs/tasks/backlog.md)
 - [Cómo trabajar en equipo](docs/team-workflow.md)
 - [Preparación local y futura publicación](docs/bootstrap.md)
+- [Entorno de desarrollo Windows/VS Code](docs/development-setup.md)
 - [Procedencia y traspaso de investigación](docs/evidence/research-handoff.md)
 
 Se conserva el historial, código y licencias de Flycast y sus dependencias.

@@ -3,6 +3,8 @@
 Leer `docs/roadmap.md` antes de elegir trabajo. El contrato completo está en
 `docs/plans/plan-flycast-kofxi-online.md`; tareas en `docs/tasks/backlog.md`.
 El roadmap es la autoridad de estado/prioridad. No mantener roadmaps rivales.
+Para configurar Windows/VS Code seguir `docs/development-setup.md` y usar el
+preset `windows-msvc`, no inferir toolchain por el nombre de `build-*`.
 
 - Conservar estructura, historial, licencias y compatibilidad upstream.
 - Windows/Linux/Android/Switch, cross-play y matchmaking son requisitos.

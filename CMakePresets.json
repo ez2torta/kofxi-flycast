@@ -1,5 +1,5 @@
 {
-    "version": 2,
+    "version": 3,
     "configurePresets": [
         {
             "name": "clang",
@@ -18,6 +18,31 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
+        },
+        {
+            "name": "windows-msvc",
+            "displayName": "Windows x64 — Visual Studio 2022 / MSVC",
+            "description": "Recommended Windows development configuration. Uses the Visual Studio generator and keeps output in build-windows-msvc.",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
+            "binaryDir": "${sourceDir}/build-windows-msvc",
+            "cacheVariables": {
+                "USE_DX9": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "windows-msvc-debug",
+            "displayName": "Windows x64 — Debug",
+            "configurePreset": "windows-msvc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "windows-msvc-release",
+            "displayName": "Windows x64 — Release",
+            "configurePreset": "windows-msvc",
+            "configuration": "Release"
         }
     ]
 }
