@@ -32,9 +32,16 @@ public:
 	void Serialize(Serializer& ser) const override;
 	void Deserialize(Deserializer& deser) override;
 
+protected:
+#ifdef AW_CARTRIDGE_PROFILE
+	virtual u16 cipherWord(u32 address) const;
+	virtual u16 decrypt16(u32 address);
+	virtual u64 profileStorageBytes() const { return RomSize; }
+#else
+	u16 decrypt16(u32 address);
+#endif
 private:
 	void device_reset();
-	u16 decrypt16(u32 address);
 	void recalc_dma_offset(int mode);
 #ifdef AW_CARTRIDGE_PROFILE
 	static void ProfileEvent(Event event, void *param);
@@ -77,3 +84,31 @@ private:
 	u64 profile_file_offset_writes = 0;
 #endif
 };
+
+#ifdef AW_CARTRIDGE_PROFILE
+// Local/offline KOF XI experiment. No full logical-ROM allocation or guest patches.
+class KOFXIExperimentalCartridge final : public AWCartridge
+{
+public:
+	KOFXIExperimentalCartridge(u32 size, bool decrypted, const std::string& directory);
+	void *GetPtr(u32 offset, u32& size) override;
+	bool Read(u32 offset, u32 size, void *dst) override;
+	void Init(LoadProgress *progress, std::vector<u8> *digest) override;
+protected:
+	u16 cipherWord(u32 address) const override;
+	u16 decrypt16(u32 address) override;
+	u64 profileStorageBytes() const override;
+private:
+	struct Segment {
+		u32 offset;
+		std::string filename;
+		std::vector<u8> data;
+		bool decoded = false;
+	};
+	const Segment *findSegment(u32 offset) const;
+	std::vector<Segment> segments;
+	bool useDecrypted;
+	std::string directory;
+	u8 key = 0xd3;
+};
+#endif

@@ -1,7 +1,7 @@
 # Backlog inicial — tareas listas para repartir
 
-Todas PENDING, responsables sin asignar. Una persona toma una fila en su PR de
-inicio indicando nombre, rama y fecha; después mantiene estado y enlaces a evidencia.
+El estado y responsable vigentes se indican por fila. Una persona toma una fila en
+su PR de inicio indicando nombre, rama y fecha; después mantiene estado y enlaces a evidencia.
 Cada fila puede convertirse en issue de GitHub conservando su ID. No hay issues
 remotos creados todavía. El roadmap decide prioridad.
 
@@ -12,7 +12,7 @@ remotos creados todavía. El roadmap decide prioridad.
 | T02 Windows/Linux | Sin asignar / PENDING | Ninguna | docs/platforms/desktop.md; workflows propios a acordar | Recetas Release, equipos mínimos, smoke tests y artefactos; x86-64/AArch64 identificados. |
 | T03 Android | Sin asignar / PENDING | Ninguna | docs/platforms/android.md; shell/android/ tras coordinación | APK base en dispositivo, controles/red/renderer, medición térmica exploratoria; registrar API/SoC/toolchain. |
 | T04 Switch | Sin asignar / PENDING | Equipo/toolchain | docs/platforms/switch.md; shell/switch/ tras verificar estructura | Entorno y build documentados, ejecución real portátil/dock; BLOCKED con motivo si no hay medios. |
-| T05 RAM/CPU/GPU | Sin asignar / PENDING | Ninguna para diseño; T01 para baseline | benchmarks/resources/, docs/evidence/ | Contabilidad completa y formato portable; perfil stock y presupuestos por dispositivo, sin optimizar aún. Hooks core mediante T00. |
+| T05 RAM/CPU/GPU | Agente de esta sesión / IN_PROGRESS (piloto ROM local) | T01 para baseline; T00/T08 antes de integrar contratos | core/hw/naomi/awcartridge.{h,cpp}, core/hw/naomi/naomi_cart.cpp (selector diagnóstico), scripts/run-kofxi-rom-benchmark.ps1, docs/kofxi/studies/; resto por reservar | [Backends B/C offline](../kofxi/studies/experimental-rom-backends.md) autorizados por usuario: arranque y chips verificados; combate A/B, estado y aceptación de CPU/RAM aún pendientes. Mantener baseline, presupuestos y coordinación T00; no driver de producción. |
 | T06 Matchmaking | Sin asignar / PENDING | T00 para congelar API | services/matchmaking/ | Auditar soluciones existentes; ADR de stack, OpenAPI/eventos/mock y pruebas de sala/cola/cancelación; contrato de cliente nativo común. |
 | T07 Entrada/audio/vídeo | Sin asignar / PENDING | Ninguna para receta; T01 para medición | benchmarks/latency/, docs/evidence/ | Método entrada-a-fotón, colas/polling y equipo; baseline USB/BT/integrado sin confundir tiempos software con sensor. |
 | T08 Determinismo/rollback | Sin asignar / PENDING | T00,T01,T02 y un destino ARM64 real | core/network/, serialización/memwatch identificadas en T00 | 10 000 restauraciones y replays x86-64/ARM64; primera divergencia por subsistema; puerta G2. |

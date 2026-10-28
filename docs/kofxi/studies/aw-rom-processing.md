@@ -347,6 +347,43 @@ estas corridas smoke anexadas para inspección. ROM/BIOS/log bruto no versionado
 
 ## Puerta de decisión
 
+### Corrida con un stage jugado (2026-10-28)
+
+Fuente: última sesión de `build-windows-msvc-profile/Release/flycast.log`, hash de
+ejecutable `712D8CDC867BB0095ECF2AEE626AF933ECA5AFCF155AB3658B40537672F08402`,
+mismo host del smoke anterior. El usuario reporta un stage completo; no suministró
+los instantes de inicio/final de pelea, equipos ni escenario. Por tanto las ventanas
+de abajo son temporales, **no** detección automática de fase. Log confirma KOF XI,
+`awbios`, región de header 0. Primera muestra 2,482 s; última pausa 109,918 s;
+cierre del renderer 112,038 s. No se incluyen las corridas smoke anexadas anteriores.
+
+| Ventana (tiempo del log) | Evidencia |
+|---|---|
+| Inicialización a pausa | 107,436 s de intervalos, 83,563 s CPU proceso, 77,78 % de un core equivalente; 13,069 ms CPU/VBlank (agregado multihilo, no latencia de frame). |
+| Muestras a 29,197 y 31,205 s | 4,012 s, 340,252 ms estimados de bucle DMA; 1,418 ms/VBlank. Ráfaga de lectura, no demostración de fase de carga ni tiempo ahorrable guest. |
+| Muestras entre 39 y 90 s | 52,053 s, 42,359 s CPU, 81,38 % de un core; 13,577 ms CPU/VBlank; 59,939 VBlanks/s; solo 48,755 ms estimados DMA (~0,0156 ms/VBlank). |
+| Memoria | Private commit 523,73 MiB en cart-init; 638,40 MiB al pausar; pico commit proceso 641,42 MiB. Working set final 605,07 MiB, pico 607,39 MiB. ROM nominal 320 MiB. |
+| Totales cartucho | 750.093 bloques / 24.002.960 bytes; EPR 37.197 llamadas, MPR-record 2.126, MPR-file 710.770. 19 escrituras de índice de registro y 834 escrituras de índice inicial/offset bajo; no equivalen a archivos únicos. |
+
+El estimado acumulado DMA fue 716,889 ms (la suma por intervalos da 716,876 ms;
+las extrapolaciones usan pesos por palabras diferentes y hay redondeo). Es elapsed
+muestreado, no CPU exclusivo. La ventana estable muestra que descifrar cartucho no
+parece el hotspot sostenido: el proceso sigue consumiendo CPU incluso con poco DMA.
+Un backend `.dec` podría aliviar ráfagas pero no está demostrado que aporte margen
+significativo en pelea; además añadir una copia descifrada completa empeoraría RAM.
+
+La memoria privada crece ~10 MiB en la ventana 39–90 s; una sesión no distingue
+caché/dynarec/texturas de fuga ni atribuye el crecimiento a G1ROM. Candidatos para
+seguir midiendo: distribución de asignaciones/cachés, mapeo/segmentación de ROM sin
+copia adicional y perfil de CPU guest/render/audio. No se implementa aún backend:
+faltan fases anotadas, repetición/overhead A/B, atribución de memoria y coste guest
+del decoder. Esta corrida no acredita fidelidad hardware, determinismo ni G3.
+
+Decisión posterior del usuario: implementar B/C para probarlos, sin promocionarlos
+a producción. Disponibles como [backends experimentales offline](experimental-rom-backends.md):
+selector, validación de chips, receta de arranque y límites. Esto supersede la espera
+de implementación indicada arriba, no demuestra aún beneficio de CPU sostenida.
+
 - **Descartar la línea** si el perfil muestra que el descifrado es insignificante
   dentro del coste total y no hay una hipótesis concreta de carga repetida.
 - **Prototipar localmente** solo si el perfil atribuye coste material a esta ruta.

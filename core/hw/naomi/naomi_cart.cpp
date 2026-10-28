@@ -271,8 +271,24 @@ static void loadMameRom(const std::string& path, const std::string& fileName, Lo
 			}
 			break;
 		case AW:
+		{
+#ifdef AW_CARTRIDGE_PROFILE
+			std::string backend = config::loadStr("kofxi", "RomBackend", "original");
+			if (backend != "original")
+			{
+				if (std::string(game->name) != "kofxi" || config::GGPOEnable || config::UseReios)
+					throw NaomiCartException("Experimental ROM backends require KOF XI offline, real AW BIOS, GGPO disabled");
+				if (backend != "segmented" && backend != "decrypted")
+					throw NaomiCartException("Unknown kofxi RomBackend (original/segmented/decrypted)");
+				CurrentCartridge = new KOFXIExperimentalCartridge(game->size, backend == "decrypted",
+						config::loadStr("kofxi", "DecryptedPath", ""));
+				break;
+			}
+			NOTICE_LOG(NAOMI, "KOF XI/AW backend=original logical_bytes=%u", game->size);
+#endif
 			CurrentCartridge = new AWCartridge(game->size);
 			break;
+		}
 		case GD:
 			{
 				GDCartridge *gdcart;
@@ -354,6 +370,10 @@ static void loadMameRom(const std::string& path, const std::string& fileName, Lo
 							if (dst == nullptr)
 								throw NaomiCartException(strprintf(T("Invalid ROM: truncated %s"), game->blobs[romid].filename));
 							u32 read = file->Read(dst, game->blobs[romid].length);
+#ifdef AW_CARTRIDGE_PROFILE
+							if (dynamic_cast<KOFXIExperimentalCartridge *>(CurrentCartridge) != nullptr && read != len)
+								throw NaomiCartException("Truncated chip in experimental ROM backend");
+#endif
 							if (config::GGPOEnable)
 								md5.add(dst, game->blobs[romid].length);
 							DEBUG_LOG(NAOMI, "Mapped %s: %x bytes at %07x", game->blobs[romid].filename, read, game->blobs[romid].offset);

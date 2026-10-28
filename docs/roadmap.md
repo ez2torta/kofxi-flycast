@@ -41,7 +41,9 @@ Un equipo no disponible bloquea su aceptación, no elimina la plataforma.
 3. T06 diseña protocolo/mock en paralelo; integración depende del contrato T00.
    T05 tiene una [propuesta de benchmark ROM/G1ROM/recursos](kofxi/studies/resource-benchmark-plan.md)
    coordinable con T01/T00/K01/K02/T08: cifras de diseño y esfuerzo estimado, sin
-   ahorro ni backend aceptados todavía.
+   ahorro ni backend aceptados todavía. Hay [prototipos B/C offline](kofxi/studies/experimental-rom-backends.md)
+   seleccionables para medición local; arranque verificado, combate A/B y equivalencia
+   de estado aún pendientes, sin aceptación de optimización.
 4. Cerrar inventario/baseline exploratorio; luego implementar G1 y fijar
    presupuestos antes de optimizar. T08–T11 dependen de sus entregables previos.
 5. Abrir el catálogo KOF XI (`docs/kofxi/`) como frente de conocimiento con

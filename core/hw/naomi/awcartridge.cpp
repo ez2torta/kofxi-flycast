@@ -166,6 +166,9 @@ ROM board internal layouts:
 
 #ifdef AW_CARTRIDGE_PROFILE
 #include <chrono>
+#include "naomi_roms.h"
+#include "oslib/oslib.h"
+#include <memory>
 #ifdef _WIN32
 #include <windows.h>
 #include <psapi.h>
@@ -185,7 +188,13 @@ u32 AWCartridge::ReadMem(u32 address, u32 size)
 			u32 roffset = epr_offset & 0x3ffffff;
 			if (roffset >= (mpr_offset / 2))
 				roffset += mpr_bank * 0x4000000;
-			u16 retval = (RomSize > (roffset * 2)) ? ((u16 *)RomPtr)[roffset] : 0; // not endian-safe?
+			u16 retval = 0;
+			if (RomSize > roffset * 2)
+#ifdef AW_CARTRIDGE_PROFILE
+				retval = cipherWord(roffset);
+#else
+				retval = ((u16 *)RomPtr)[roffset]; // not endian-safe?
+#endif
 			DEBUG_LOG(NAOMI, "AWCART ReadMem %08x: %x", address, retval);
 			return retval;
 		}
@@ -350,10 +359,163 @@ static u16 decrypt(u16 cipherText, u32 address, const u8 key)
 }
 
 u16 AWCartridge::decrypt16(u32 address) {
+#ifdef AW_CARTRIDGE_PROFILE
+	return decrypt(cipherWord(address % (RomSize / 2)), address, rombd_key);
+#else
 	return decrypt(((u16 *)RomPtr)[address % (RomSize / 2)], address, rombd_key);
+#endif
 }
 
 #ifdef AW_CARTRIDGE_PROFILE
+u16 AWCartridge::cipherWord(u32 address) const
+{
+	return ((const u16 *)RomPtr)[address];
+}
+
+// Inverse of the existing AW transformation, used only to preserve raw PIO when
+// a segment stores plaintext. No second encrypted copy is retained at runtime.
+static u16 encryptWord(u16 plain, u32 address, u8 key)
+{
+	const auto& ss = sboxes_table[(key >> 4) & 3];
+	u16 aux = plain ^ xor_table[key & 15];
+	auto inverse = [](const u8 *table, int count, int value) {
+		for (int i = 0; i < count; ++i)
+			if (table[i] == value)
+				return i;
+		return 0; // All table entries form permutations.
+	};
+	aux = inverse(ss.S0, 32, aux & 31)
+			| (inverse(ss.S1, 16, (aux >> 5) & 15) << 5)
+			| (inverse(ss.S2, 16, (aux >> 9) & 15) << 9)
+			| (inverse(ss.S3, 8, aux >> 13) << 13);
+	const u8 addr_vec[] = {13,5,2,14,10,9,4,15,11,6,1,12,8,7,3,0};
+	aux ^= bitswap16((u16)address, addr_vec);
+	u16 cipher = 0;
+	const u8 *pbox = permutation_table[key >> 6];
+	for (int i = 0; i < 16; ++i)
+		cipher |= ((aux >> i) & 1) << pbox[i];
+	return cipher;
+}
+
+KOFXIExperimentalCartridge::KOFXIExperimentalCartridge(u32 size, bool decrypted, const std::string& path)
+	: AWCartridge(0), useDecrypted(decrypted), directory(path)
+{
+	RomSize = size;
+}
+
+const KOFXIExperimentalCartridge::Segment *KOFXIExperimentalCartridge::findSegment(u32 offset) const
+{
+	for (const auto& segment : segments)
+		if (offset >= segment.offset && offset - segment.offset < segment.data.size())
+			return &segment;
+	return nullptr;
+}
+
+u64 KOFXIExperimentalCartridge::profileStorageBytes() const
+{
+	u64 bytes = 0;
+	for (const auto& segment : segments)
+		bytes += segment.data.size();
+	return bytes;
+}
+
+void *KOFXIExperimentalCartridge::GetPtr(u32 offset, u32& size)
+{
+	offset &= 0x1fffffff;
+	for (auto& segment : segments)
+		if (offset >= segment.offset && offset - segment.offset <= segment.data.size()
+				&& size <= segment.data.size() - (offset - segment.offset))
+			return segment.data.data() + offset - segment.offset;
+	// Loader allocations must match catalogued chips, not arbitrary logical gaps.
+	if (game != nullptr)
+		for (const auto& blob : game->blobs)
+			if (blob.filename != nullptr && blob.blob_type == Normal && blob.offset == offset && blob.length == size)
+			{
+				segments.push_back({offset, blob.filename, std::vector<u8>(size, 0xff), false});
+				return segments.back().data.data();
+			}
+	size = 0;
+	return nullptr;
+}
+
+u16 KOFXIExperimentalCartridge::cipherWord(u32 address) const
+{
+	const auto *segment = findSegment(address * 2);
+	if (segment == nullptr)
+		return 0xffff;
+	u32 index = address * 2 - segment->offset;
+	u16 word = segment->data[index] | (segment->data[index + 1] << 8);
+	return segment->decoded ? encryptWord(word, address, key) : word;
+}
+
+u16 KOFXIExperimentalCartridge::decrypt16(u32 address)
+{
+	u32 physical = address % (RomSize / 2);
+	const auto *segment = findSegment(physical * 2);
+	if (segment != nullptr && segment->decoded)
+	{
+		u32 index = physical * 2 - segment->offset;
+		return segment->data[index] | (segment->data[index + 1] << 8);
+	}
+	return decrypt(cipherWord(physical), address, key);
+}
+
+bool KOFXIExperimentalCartridge::Read(u32 offset, u32 size, void *dst)
+{
+	offset &= 0x1fffffff;
+	auto *out = static_cast<u8 *>(dst);
+	for (u32 i = 0; i < size; ++i)
+	{
+		u32 pos = offset + i;
+		out[i] = pos < RomSize ? (cipherWord(pos / 2) >> ((pos & 1) * 8)) : 0xff;
+	}
+	return true;
+}
+
+void KOFXIExperimentalCartridge::Init(LoadProgress *progress, std::vector<u8> *digest)
+{
+	if (game == nullptr || std::string(game->name) != "kofxi" || game->key != key || segments.size() != 8)
+		throw NaomiCartException("Experimental AW backend requires the catalogued KOF XI set");
+	u64 bytes = 0;
+	for (auto& segment : segments)
+	{
+		bytes += segment.data.size();
+		if (!useDecrypted)
+			continue;
+		if (progress != nullptr)
+		{
+			static std::string label;
+			label = "Verifying " + segment.filename + ".dec";
+			progress->label = label.c_str();
+			progress->progress = (float)bytes / 243269632;
+		}
+		std::string path = directory + "/" + segment.filename + ".dec";
+		std::unique_ptr<FILE, decltype(&fclose)> file(nowide::fopen(path.c_str(), "rb"), fclose);
+		if (!file)
+			throw NaomiCartException("Cannot open decrypted chip: " + path);
+		std::vector<u8> plain(segment.data.size());
+		if (fread(plain.data(), 1, plain.size(), file.get()) != plain.size() || fgetc(file.get()) != EOF)
+			throw NaomiCartException("Wrong decrypted chip size: " + path);
+		for (u32 i = 0; i < plain.size(); i += 2)
+		{
+			if ((i & 0xffff) == 0 && progress != nullptr && progress->cancelled)
+				throw LoadCancelledException();
+			u32 address = (segment.offset + i) / 2;
+			u16 raw = segment.data[i] | (segment.data[i + 1] << 8);
+			u16 word = plain[i] | (plain[i + 1] << 8);
+			if (word != decrypt(raw, address, key) || encryptWord(word, address, key) != raw)
+				throw NaomiCartException("Decrypted chip differs from ROM reference: " + path);
+		}
+		segment.data.swap(plain);
+		segment.decoded = true;
+		NOTICE_LOG(NAOMI, "KOF XI verified chip=%s bytes=%u PIO_inverse=passed", segment.filename.c_str(), (u32)segment.data.size());
+	}
+	NOTICE_LOG(NAOMI, "KOF XI backend=%s logical_bytes=%u stored_bytes=%llu validation=%s offline_only=1",
+			useDecrypted ? "decrypted" : "segmented", RomSize, (unsigned long long)bytes,
+			useDecrypted ? "all_chip_words_and_PIO_inverse" : "catalogued_segments");
+	AWCartridge::Init(progress, digest);
+}
+
 AWCartridge::~AWCartridge()
 {
 	if (profile_listening)
@@ -389,9 +551,9 @@ void AWCartridge::ReportRuntime(const char *reason)
 	const u64 sampled_words = profile_sampled_words - profile_last_sample_words;
 	const u64 sampled_ns = profile_sampled_ns - profile_last_sample_ns;
 	const double estimated_ms = sampled_words == 0 ? 0.0 : (double)sampled_ns / sampled_words * words / 1e6;
-	NOTICE_LOG(NAOMI, "AW runtime: reason=%s interval_ms=%.3f vblanks=%llu dma_bytes=%llu sampled_words=%llu estimated_dma_loop_ms=%.3f rom_allocation_bytes=%u",
+	NOTICE_LOG(NAOMI, "AW runtime: reason=%s interval_ms=%.3f vblanks=%llu dma_bytes=%llu sampled_words=%llu estimated_dma_loop_ms=%.3f rom_logical_bytes=%u rom_storage_bytes=%llu",
 			reason, dt_ms, (unsigned long long)frames, (unsigned long long)(words * 2),
-			(unsigned long long)sampled_words, estimated_ms, RomSize);
+			(unsigned long long)sampled_words, estimated_ms, RomSize, (unsigned long long)profileStorageBytes());
 #ifdef _WIN32
 	FILETIME creation{}, exit{}, kernel{}, user{};
 	const bool cpu_ok = GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user) != 0;
