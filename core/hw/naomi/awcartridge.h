@@ -51,5 +51,6 @@ private:
 	u64 profile_sampled_words = 0;
 	u64 profile_sampled_ns = 0;
 	bool profile_reported = false;
+	u64 profile_reported_calls = 0;
 #endif
 };

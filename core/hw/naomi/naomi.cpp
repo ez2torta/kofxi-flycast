@@ -240,8 +240,9 @@ const u8 *getGameSerialId()
 void naomi_reg_Term()
 {
 #ifdef AW_CARTRIDGE_PROFILE
-	if (settings.platform.isAtomiswave() && CurrentCartridge != nullptr)
-		static_cast<AWCartridge *>(CurrentCartridge)->DumpProfile();
+	if (CurrentCartridge != nullptr)
+		if (auto *awCartridge = dynamic_cast<AWCartridge *>(CurrentCartridge))
+			awCartridge->DumpProfile();
 #endif
 	multiboard.reset();
 	m3comm.reset();

@@ -348,9 +348,10 @@ AWCartridge::~AWCartridge()
 
 void AWCartridge::DumpProfile()
 {
-	if (profile_reported)
+	if (profile_reported && profile_reported_calls == profile_dma_calls)
 		return;
 	profile_reported = true;
+	profile_reported_calls = profile_dma_calls;
 	const double estimated_ns = profile_sampled_words == 0 ? 0.0
 			: (double)profile_sampled_ns / profile_sampled_words * profile_dma_words;
 	INFO_LOG(NAOMI, "AW decrypt profile: dma_calls=%llu dma_words=%llu sampled_blocks=%llu sampled_words=%llu sampled_ns=%llu estimated_dma_loop_elapsed_ns=%.0f",
@@ -423,6 +424,8 @@ void *AWCartridge::GetDmaPtr(u32 &size)
 #ifdef AW_CARTRIDGE_PROFILE
 	++profile_dma_calls;
 	profile_dma_words += size / 2;
+	if (profile_dma_calls == 1 || profile_dma_calls % 1048576 == 0)
+		DumpProfile();
 	const bool sample = size != 0 && (profile_dma_calls % 64 == 0);
 	const auto sample_start = sample ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 #endif
