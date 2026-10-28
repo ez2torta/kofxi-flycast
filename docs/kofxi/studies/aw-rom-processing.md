@@ -265,7 +265,8 @@ bucles de `GetDmaPtr()`. Escribe un primer registro al primer DMA, checkpoints c
 identifica el objeto por tipo dinámico `AWCartridge`, no por `settings.platform`,
 que puede cambiar durante el teardown. El tiempo es **elapsed wall time del bucle**
 (incluye el coste de llamada/loop y puede incluir preempción), no ciclos CPU
-exclusivos; el muestreo evita llamar al reloj por cada palabra. Esto mide decrypt
+exclusivos; el muestreo evita llamar al reloj por cada palabra. Los registros usan
+nivel `NOTICE_LOG`, porque Release elimina `INFO_LOG` al compilar. Esto mide decrypt
 del DMA del cartucho AW, **no** la tarea guest `DECORD_TASK` ni descompresión G1ROM.
 La build diagnóstica se compila en `build-windows-msvc-profile/`, separada del
 Release funcional.
@@ -280,8 +281,9 @@ región 0, y ausencia de BIOS regional AW); no produjeron el perfil esperado. Se
 detectó que el punto de terminación estaba condicionado por plataforma y podía
 saltarse tras cambiar el estado; además se añadió un checkpoint en el primer DMA y
 cada 1.048.576 bloques para que la próxima corrida dé evidencia aunque no llegue el
-hook final. Esta revisión compiló correctamente; falta validar el nuevo log en una
-corrida corta. No hay resultados que permitan decidir si el descifrado merece
+hook final. Se comprobó además que `INFO_LOG` se elimina en Release; el perfil usa
+`NOTICE_LOG` para permanecer visible. Esta revisión debe compilarse y validarse en
+una corrida corta. No hay resultados que permitan decidir si el descifrado merece
 preprocesarse. No se tocó serialización, estado guest, scheduler, GGPO, dynarec ni
 código habilitado por defecto.
 

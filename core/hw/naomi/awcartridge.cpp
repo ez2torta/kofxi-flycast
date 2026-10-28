@@ -354,7 +354,7 @@ void AWCartridge::DumpProfile()
 	profile_reported_calls = profile_dma_calls;
 	const double estimated_ns = profile_sampled_words == 0 ? 0.0
 			: (double)profile_sampled_ns / profile_sampled_words * profile_dma_words;
-	INFO_LOG(NAOMI, "AW decrypt profile: dma_calls=%llu dma_words=%llu sampled_blocks=%llu sampled_words=%llu sampled_ns=%llu estimated_dma_loop_elapsed_ns=%.0f",
+	NOTICE_LOG(NAOMI, "AW decrypt profile: dma_calls=%llu dma_words=%llu sampled_blocks=%llu sampled_words=%llu sampled_ns=%llu estimated_dma_loop_elapsed_ns=%.0f",
 			(unsigned long long)profile_dma_calls,
 			(unsigned long long)profile_dma_words,
 			(unsigned long long)profile_sampled_blocks,
