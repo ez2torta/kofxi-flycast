@@ -255,7 +255,7 @@ El protocolo de producto en el plan rector requiere 10 pares A/B para hipótesis
 rendimiento; las tres corridas de esta fase solo son exploratorias para determinar
 si merece la pena diseñar un experimento formal. No son aceptación G3.
 
-### Instrumentación diagnóstica autorizada (en preparación)
+### Instrumentación diagnóstica autorizada (build validada; corrida pendiente)
 
 El usuario autorizó una instrumentación local/diagnóstica en `AWCartridge`; no es
 un driver ni se activa en builds normales. Con `AW_CARTRIDGE_PROFILE` definido,
@@ -266,13 +266,15 @@ extrapolación ponderada por palabras. El tiempo es **elapsed wall time del bucl
 exclusivos; el muestreo evita llamar al reloj por cada palabra. La build diagnóstica
 se compila en `build-windows-msvc-profile/`, separada del Release funcional.
 
-Estado a 2026-10-28: configure Release completado en `build-windows-msvc-profile/`
-con `/DAW_CARTRIDGE_PROFILE`; build y verificación binaria en curso. El Release
-funcional original conserva SHA-256
-`8B2ACBD44D09A9A060AD618B4DCAFBDEE62675302608635FDCE3F2C190276B6B`. No hay
-resultados que permitan decidir si el descifrado merece preprocesarse. No se tocó
-serialización, estado guest, scheduler, GGPO, dynarec ni código habilitado por
-defecto.
+Estado a 2026-10-28: Release diagnóstico compilado exitosamente en
+`build-windows-msvc-profile/Release/flycast.exe` con `/DAW_CARTRIDGE_PROFILE`,
+`/O2 /Ob2 /DNDEBUG` (MSVC 19.44.35229.0). SHA-256 del diagnóstico:
+`9033F85A8DB01FA53150E91FFB1235D9BCB736F45E1FE919DEB375890C01DF27`. SHA-256 del
+Release funcional preservado: `8B2ACBD44D09A9A060AD618B4DCAFBDEE62675302608635FDCE3F2C190276B6B`.
+La corrida corta con KOF XI y la verificación del mensaje al descargar el cartucho
+siguen pendientes. No hay resultados que permitan decidir si el descifrado merece
+preprocesarse. No se tocó serialización, estado guest, scheduler, GGPO, dynarec ni
+código habilitado por defecto.
 
 ## Puerta de decisión
 
