@@ -207,11 +207,17 @@ void AWCartridge::WriteMem(u32 address, u32 data, u32 size)
 
 	case AW_MPR_RECORD_INDEX_addr:
 		mpr_record_index = data;
+#ifdef AW_CARTRIDGE_PROFILE
+		++profile_record_index_writes;
+#endif
 		recalc_dma_offset(MPR_RECORD);
 		break;
 
 	case AW_MPR_FIRST_FILE_INDEX_addr:
 		mpr_first_file_index = data;
+#ifdef AW_CARTRIDGE_PROFILE
+		++profile_first_file_index_writes;
+#endif
 		recalc_dma_offset(MPR_FILE);
 		break;
 
@@ -222,6 +228,9 @@ void AWCartridge::WriteMem(u32 address, u32 data, u32 size)
 
 	case AW_MPR_FILE_OFFSETL_addr:
 		mpr_file_offset = (mpr_file_offset & 0xffff0000) | (u16)data;
+#ifdef AW_CARTRIDGE_PROFILE
+		++profile_file_offset_writes;
+#endif
 		recalc_dma_offset(MPR_FILE);
 		break;
 
@@ -354,9 +363,18 @@ void AWCartridge::DumpProfile()
 	profile_reported_calls = profile_dma_calls;
 	const double estimated_ns = profile_sampled_words == 0 ? 0.0
 			: (double)profile_sampled_ns / profile_sampled_words * profile_dma_words;
-	NOTICE_LOG(NAOMI, "AW decrypt profile: dma_calls=%llu dma_words=%llu sampled_blocks=%llu sampled_words=%llu sampled_ns=%llu estimated_dma_loop_elapsed_ns=%.0f",
+	NOTICE_LOG(NAOMI, "AW decrypt profile: dma_calls=%llu dma_words=%llu epr_calls=%llu epr_words=%llu mpr_record_calls=%llu mpr_record_words=%llu mpr_file_calls=%llu mpr_file_words=%llu record_index_writes=%llu first_file_index_writes=%llu file_offset_writes=%llu sampled_blocks=%llu sampled_words=%llu sampled_ns=%llu estimated_dma_loop_elapsed_ns=%.0f",
 			(unsigned long long)profile_dma_calls,
 			(unsigned long long)profile_dma_words,
+			(unsigned long long)profile_epr_calls,
+			(unsigned long long)profile_epr_words,
+			(unsigned long long)profile_mpr_record_calls,
+			(unsigned long long)profile_mpr_record_words,
+			(unsigned long long)profile_mpr_file_calls,
+			(unsigned long long)profile_mpr_file_words,
+			(unsigned long long)profile_record_index_writes,
+			(unsigned long long)profile_first_file_index_writes,
+			(unsigned long long)profile_file_offset_writes,
 			(unsigned long long)profile_sampled_blocks,
 			(unsigned long long)profile_sampled_words,
 			(unsigned long long)profile_sampled_ns,
@@ -390,6 +408,9 @@ void AWCartridge::device_reset()
 
 void AWCartridge::recalc_dma_offset(int mode)
 {
+#ifdef AW_CARTRIDGE_PROFILE
+	profile_dma_mode = mode;
+#endif
 	switch(mode) {
 	case EPR:
 		dma_offset = epr_offset * 2;
@@ -424,6 +445,21 @@ void *AWCartridge::GetDmaPtr(u32 &size)
 #ifdef AW_CARTRIDGE_PROFILE
 	++profile_dma_calls;
 	profile_dma_words += size / 2;
+	if (profile_dma_mode == EPR)
+	{
+		++profile_epr_calls;
+		profile_epr_words += size / 2;
+	}
+	else if (profile_dma_mode == MPR_RECORD)
+	{
+		++profile_mpr_record_calls;
+		profile_mpr_record_words += size / 2;
+	}
+	else if (profile_dma_mode == MPR_FILE)
+	{
+		++profile_mpr_file_calls;
+		profile_mpr_file_words += size / 2;
+	}
 	if (profile_dma_calls == 1 || profile_dma_calls % 1048576 == 0)
 		DumpProfile();
 	const bool sample = size != 0 && (profile_dma_calls % 64 == 0);

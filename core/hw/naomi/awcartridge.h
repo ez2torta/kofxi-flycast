@@ -52,5 +52,15 @@ private:
 	u64 profile_sampled_ns = 0;
 	bool profile_reported = false;
 	u64 profile_reported_calls = 0;
+	int profile_dma_mode = -1;
+	u64 profile_epr_calls = 0;
+	u64 profile_epr_words = 0;
+	u64 profile_mpr_record_calls = 0;
+	u64 profile_mpr_record_words = 0;
+	u64 profile_mpr_file_calls = 0;
+	u64 profile_mpr_file_words = 0;
+	u64 profile_record_index_writes = 0;
+	u64 profile_first_file_index_writes = 0;
+	u64 profile_file_offset_writes = 0;
 #endif
 };

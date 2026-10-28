@@ -255,7 +255,7 @@ El protocolo de producto en el plan rector requiere 10 pares A/B para hipótesis
 rendimiento; las tres corridas de esta fase solo son exploratorias para determinar
 si merece la pena diseñar un experimento formal. No son aceptación G3.
 
-### Instrumentación diagnóstica autorizada (build validada; corrida pendiente)
+### Instrumentación diagnóstica autorizada (corrida inicial y desglose extendido)
 
 El usuario autorizó una instrumentación local/diagnóstica en `AWCartridge`; no es
 un driver ni se activa en builds normales. Con `AW_CARTRIDGE_PROFILE` definido,
@@ -268,24 +268,23 @@ que puede cambiar durante el teardown. El tiempo es **elapsed wall time del bucl
 exclusivos; el muestreo evita llamar al reloj por cada palabra. Los registros usan
 nivel `NOTICE_LOG`, porque Release elimina `INFO_LOG` al compilar. Esto mide decrypt
 del DMA del cartucho AW, **no** la tarea guest `DECORD_TASK` ni descompresión G1ROM.
-La build diagnóstica se compila en `build-windows-msvc-profile/`, separada del
-Release funcional.
+El desglose extendido cuenta por separado EPR/MPR-record/MPR-file DMA y escrituras de
+índices/offsets AW, para distinguir búsquedas de registros G1ROM de lecturas de
+payload. La build diagnóstica se compila en `build-windows-msvc-profile/`, separada
+del Release funcional.
 
-Estado a 2026-10-28: Release diagnóstico compilado exitosamente en
-`build-windows-msvc-profile/Release/flycast.exe` con `/DAW_CARTRIDGE_PROFILE`,
-`/O2 /Ob2 /DNDEBUG` (MSVC 19.44.35229.0). SHA-256 del diagnóstico:
-`F012314CEB9131F0C4E6937CF8518A7060B58F58AD12E919709B9CF80A0BCAEE`. SHA-256 del
-Release funcional preservado: `8B2ACBD44D09A9A060AD618B4DCAFBDEE62675302608635FDCE3F2C190276B6B`.
-Dos corridas anteriores abrieron KOF XI (log confirma `THE KING OF FIGHTERS XI`,
-región 0, y ausencia de BIOS regional AW); no produjeron el perfil esperado. Se
-detectó que el punto de terminación estaba condicionado por plataforma y podía
-saltarse tras cambiar el estado; además se añadió un checkpoint en el primer DMA y
-cada 1.048.576 bloques para que la próxima corrida dé evidencia aunque no llegue el
-hook final. Se comprobó además que `INFO_LOG` se elimina en Release; el perfil usa
-`NOTICE_LOG` para permanecer visible. Esta revisión debe compilarse y validarse en
-una corrida corta. No hay resultados que permitan decidir si el descifrado merece
-preprocesarse. No se tocó serialización, estado guest, scheduler, GGPO, dynarec ni
-código habilitado por defecto.
+Estado a 2026-10-28: MSVC 19.44.35229.0, Release `/O2 /Ob2 /DNDEBUG`, macro
+`AW_CARTRIDGE_PROFILE`. El Release funcional preservado mantiene SHA-256
+`8B2ACBD44D09A9A060AD618B4DCAFBDEE62675302608635FDCE3F2C190276B6B`. El log confirma
+`THE KING OF FIGHTERS XI`, región 0; BIOS regional 1 no encontrado en `awbios`.
+Corrida hasta Order Select: 210.898 bloques DMA, 3.374.360 palabras de 16 bits,
+3.295 bloques muestreados, 52.720 palabras muestreadas y 3.271.000 ns observados;
+extrapolación ponderada 209.361.373 ns (~209 ms elapsed). Incluye bucle/llamada y
+posible preempción, no es CPU exclusivo ni una comparación A/B, y no separa búsquedas
+de payload. Se descubrió que `INFO_LOG` se elimina en Release; el perfil ahora usa
+`NOTICE_LOG`. Está en curso el desglose EPR/MPR para la siguiente corrida; no mide
+G1 decompression todavía ni permite decidir materialidad. No se tocó serialización,
+estado guest, scheduler, GGPO, dynarec ni código habilitado por defecto.
 
 ## Puerta de decisión
 
