@@ -260,8 +260,8 @@ si merece la pena diseñar un experimento formal. No son aceptación G3.
 El usuario autorizó una instrumentación local/diagnóstica en `AWCartridge`; no es
 un driver ni se activa en builds normales. Con `AW_CARTRIDGE_PROFILE` definido,
 el código cuenta bloques/words DMA y cronometra con `steady_clock` uno de cada 64
-bucles de `GetDmaPtr()`. Al destruir el cartucho registra muestra, palabras y una
-extrapolación ponderada por palabras. El tiempo es **elapsed wall time del bucle**
+bucles de `GetDmaPtr()`. Al terminar el subsistema Naomi registra muestra, palabras
+y una extrapolación ponderada por palabras (el destructor es respaldo). El tiempo es **elapsed wall time del bucle**
 (incluye el coste de llamada/loop y puede incluir preempción), no ciclos CPU
 exclusivos; el muestreo evita llamar al reloj por cada palabra. La build diagnóstica
 se compila en `build-windows-msvc-profile/`, separada del Release funcional.
@@ -269,12 +269,14 @@ se compila en `build-windows-msvc-profile/`, separada del Release funcional.
 Estado a 2026-10-28: Release diagnóstico compilado exitosamente en
 `build-windows-msvc-profile/Release/flycast.exe` con `/DAW_CARTRIDGE_PROFILE`,
 `/O2 /Ob2 /DNDEBUG` (MSVC 19.44.35229.0). SHA-256 del diagnóstico:
-`9033F85A8DB01FA53150E91FFB1235D9BCB736F45E1FE919DEB375890C01DF27`. SHA-256 del
+`F012314CEB9131F0C4E6937CF8518A7060B58F58AD12E919709B9CF80A0BCAEE`. SHA-256 del
 Release funcional preservado: `8B2ACBD44D09A9A060AD618B4DCAFBDEE62675302608635FDCE3F2C190276B6B`.
-La corrida corta con KOF XI y la verificación del mensaje al descargar el cartucho
-siguen pendientes. No hay resultados que permitan decidir si el descifrado merece
-preprocesarse. No se tocó serialización, estado guest, scheduler, GGPO, dynarec ni
-código habilitado por defecto.
+La primera corrida abrió KOF XI con la build diagnóstica anterior (log confirma
+`THE KING OF FIGHTERS XI`, región 0), pero no produjo el resumen: Flycast no destruye
+`CurrentCartridge` al cerrar normalmente. Se corrigió el punto de volcado a la
+terminación Naomi y se recompiló; falta una corrida corta con esta revisión. No hay
+resultados que permitan decidir si el descifrado merece preprocesarse. No se tocó
+serialización, estado guest, scheduler, GGPO, dynarec ni código habilitado por defecto.
 
 ## Puerta de decisión
 

@@ -17,6 +17,7 @@ public:
 	AWCartridge(u32 size) : Cartridge(size) {}
 #ifdef AW_CARTRIDGE_PROFILE
 	~AWCartridge() override;
+	void DumpProfile();
 #endif
 
 	void Init(LoadProgress *progress = nullptr, std::vector<u8> *digest = nullptr) override;
@@ -49,5 +50,6 @@ private:
 	u64 profile_sampled_blocks = 0;
 	u64 profile_sampled_words = 0;
 	u64 profile_sampled_ns = 0;
+	bool profile_reported = false;
 #endif
 };

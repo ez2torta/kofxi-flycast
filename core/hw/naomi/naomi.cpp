@@ -23,6 +23,9 @@
 
 #include "naomi.h"
 #include "naomi_cart.h"
+#ifdef AW_CARTRIDGE_PROFILE
+#include "awcartridge.h"
+#endif
 #include "naomi_regs.h"
 #include "naomi_m3comm.h"
 #include "multiboard.h"
@@ -236,6 +239,10 @@ const u8 *getGameSerialId()
 
 void naomi_reg_Term()
 {
+#ifdef AW_CARTRIDGE_PROFILE
+	if (settings.platform.isAtomiswave() && CurrentCartridge != nullptr)
+		static_cast<AWCartridge *>(CurrentCartridge)->DumpProfile();
+#endif
 	multiboard.reset();
 	m3comm.reset();
 	networkOutput.term();
