@@ -113,3 +113,61 @@ arranque/validación de carga guest y combate, sin ocultar el coste inicial.
 `fs_extracted` **no está implementado**: faltan EPR/tablas/padding y política de
 fallback por rango para un proveedor D completo. Tampoco se elimina la descompresión
 guest `DECORD_TASK`. No se distribuyen ROM, chips `.dec` ni assets extraídos.
+
+## Pareja manual B/C del usuario (2026-10-28, 19:56–20:01)
+
+Fuentes locales bajo `build-windows-msvc-profile/Release/rom-benchmark-runs/`:
+`20261028-195647-749-segmented/{run.json,flycast.log}` y
+`20261028-195907-019-decrypted/{run.json,flycast.log}`. Mismo EXE SHA-256 indicado
+arriba y ZIP SHA-256 `8FBAFB8615986981E17E49E49A80AC4806B3E758A36A1880F7B528D1BFF19D44`.
+Sin proceso Flycast vivo al analizar; ambos logs terminan con cierre del renderer.
+C aprobó los ocho chips; ninguno de los logs tiene entradas de nivel error.
+Esto no sustituye hashes/anclas guest ni confirma por sí solo ausencia de fallo visual.
+
+| Métrica | B cifrado segmentado | C `.dec` segmentado |
+|---|---:|---:|
+| Tiempo proceso hasta cart-init | 1,417 s | 19,770 s |
+| CPU proceso hasta cart-init | 1,547 s | 20,578 s |
+| Intervalos posteriores a cart-init (hasta pausa) | 103,023 s | 114,720 s |
+| CPU posterior a cart-init / VBlank | 11,897 ms | 11,125 ms |
+| CPU posterior equivalente a un core | 70,75 % | 66,28 % |
+| Bytes DMA totales | 23.577.200 | 23.557.936 |
+| Estimación acumulada bucle DMA | 798,914 ms | 203,350 ms |
+| Private commit final | 540,61 MiB | 546,13 MiB |
+| Pico commit proceso | 552,43 MiB | 551,27 MiB |
+| Pico working set proceso | 522,13 MiB | 521,16 MiB |
+| Almacenamiento de chips | 232 MiB | 232 MiB |
+
+Método: emparejar cada `AW runtime` con el siguiente `AW host`. Sumar `interval_ms`,
+`cpu_ms`, `vblanks` de muestras con `cpu_valid=1`; normalizar CPU por la suma de
+VBlanks (no promediar porcentajes sin ponderar). Excluir validación inicial de la
+comparación sostenida, pero mantener su coste explícito y los picos de proceso.
+Los totales DMA usan el último resumen. Las fases no están anotadas por operador.
+
+Control temporal adicional: tomar solo muestras cuyo timestamp está entre 35 y 85 s
+**después del primer Resume**. Cada caso tiene 25 intervalos / 3.000 VBlanks (~50,05 s):
+B 12,115 ms CPU/VBlank, C 11,271; 59,943 y 59,938 VBlanks/s. El elapsed estimado DMA
+fue solo 0,01873 y 0,00420 ms/VBlank respectivamente. No asumir que estas ventanas
+representan exactamente las mismas fases/acciones: hubo 1,584 MiB y 1,363 MiB de DMA.
+
+Interpretación exploratoria:
+
+- C reduce ~74,5 % el elapsed estimado del bucle DMA con volumen total casi igual
+  (difiere ~0,08 %). No equivale a reducir 74,5 % la CPU del juego. Todavía copia a
+  buffer de 32 bytes y resuelve segmentos; no es DMA directo ni elimina decoder guest.
+- La diferencia observada de CPU total (~6–7 % por VBlank) es mucho mayor que la
+  diferencia de bucle DMA en la ventana temporal. No atribuirla al backend: una sola
+  pareja manual, distinta duración/tráfico y sin energía/térmica/escenario fijados.
+- B y C conservan el mismo ahorro de payload de 88 MiB respecto al control lógico.
+  Sus picos de commit difieren solo ~1,17 MiB. El control A histórico con stage dio
+  641,42 MiB de pico, compatible con ~89 MiB menos aquí, pero fue otra corrida/build
+  diagnóstica; no es un A/B de memoria aceptado.
+- El chequeo de C añade ~18,35 s wall y ~19,03 s CPU hasta cart-init en esta pareja.
+  Hoy es una opción de ensayo, no una mejora de arranque. No ocultar el coste ni
+  quitar verificaciones antes de definir una identidad de caché segura.
+
+Decisión: B es candidato simple para investigar RAM; C confirma que puede evitarse
+trabajo host en cargas, pero el beneficio de CPU sostenida sigue sin demostrar.
+Próximo control: A/B/C con este mismo EXE, mismos seis personajes/stage, tiempos de
+fase anotados y orden alternado; después anclas/estado y pares repetidos del plan.
+No iniciar backend `fs_extracted` ni parche guest basándose solo en estos promedios.
