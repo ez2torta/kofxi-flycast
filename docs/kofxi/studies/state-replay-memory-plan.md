@@ -213,6 +213,9 @@ de P5. No recortar el corpus para salvar una hipótesis.
 
 - Reproducir el mismo paquete en A/B/C/D con el mismo EXE/config compatible,
   separando validación host inicial, selección, carga, combate y fin de stage.
+- Replays externos de Flycast Dojo/Fightcade pueden investigarse como corpus
+  exploratorio; el [estudio del enlace Fightcade](fightcade-flycast-replay-study.md)
+  documenta límites y no los acepta como P1/E2 sin identidad/anclas verificadas.
 - Aislar formato de replay/adaptador de estado del proveedor de red. Evaluar
   GekkoNet en ADR/spike: integración save/load/step, replay/checksums, propiedad y
   lifecycle de buffers, predicción, rollback profundo, espectadores y transporte.

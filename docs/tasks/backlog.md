@@ -31,7 +31,13 @@ Subplan documental del 29-oct para T01/T05/K02/T00/T08:
 [estado, replay y memoria](../kofxi/studies/state-replay-memory-plan.md). Está pendiente
 de ejecución: tomar cada lote y coordinar rutas/hooks antes de implementar.
 E1–E8 son entregables de ese estudio, no prioridades ni tareas rivales del roadmap.
-La evaluación GGPO/GekkoNet queda separada bajo T06 y requiere ADR.
+La evaluación GGPO/GekkoNet queda separada bajo T06 y requiere ADR. Avance documental
+del 29-oct, pendiente de revisión T00/T01/T08: [identidad/auditoría P0](../kofxi/studies/state-replay-p0-baseline.md)
+y [diseño P1](../kofxi/studies/state-replay-p1-lab-design.md). No sustituyen la
+ejecución ni aceptan E1/E2. La definición de "input consumido" y la frontera
+temporal están propuestas para revisión en
+[T00/T08](../kofxi/studies/state-replay-p0-temporal-contract-proposal.md); el punto
+de `GetInput()` se corrigió como fuente intermedia, no observación guest.
 
 - T01–T07 pueden investigar/medir sus dominios en paralelo. Los contratos nuevos
   se integran vía T00 antes de depender de estructuras/funciones inventadas.

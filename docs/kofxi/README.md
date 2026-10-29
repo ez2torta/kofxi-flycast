@@ -31,7 +31,7 @@ catálogo pasan al [backlog](../tasks/backlog.md).
 | ID | Área | Estado inicial | Datos ya localizados |
 |---|---|---|---|
 | KOF-FMT | Formatos y compresión | Por catalogar | UNI y recursos gráficos; contratos detallados pendientes de importar con evidencia. |
-| KOF-MEM | Memoria/runtime | Hallazgos parciales; plan de laboratorio | [Estado/replay/deltas](studies/state-replay-memory-plan.md): contrastar mapa AW/PS2, medir escrituras y validar snapshots antes de excluir estado. |
+| KOF-MEM | Memoria/runtime | Hallazgos parciales; plan de laboratorio | [Estado/replay/deltas](studies/state-replay-memory-plan.md): contrastar mapa AW/PS2, medir escrituras y validar snapshots antes de excluir estado. Avance documental: [borrador P0 de identidad/auditoría](studies/state-replay-p0-baseline.md), [propuesta temporal a T00/T08](studies/state-replay-p0-temporal-contract-proposal.md), [diseño P1](studies/state-replay-p1-lab-design.md) y [estudio de replay Fightcade/Dojo](studies/fightcade-flycast-replay-study.md); sin ejecución ni aceptación E1/E2. |
 | KOF-PLAY | Gameplay/frame data | Parcial | Pilotos de acciones y transiciones; no generalizar al roster. |
 | KOF-QOL | Features de usuario | Propuesta | Hitboxes, training, frame data, input display, repetición y análisis. |
 | KOF-ROM | Cartucho Atomiswave | Pipeline local aclarado; atribución dinámica pendiente | [Imagen procesada vs. AWCartridge](studies/aw-rom-processing.md) distingue ROMs `.dec` de `fs_extracted/`; no es una feature aceptada ni autoriza redistribuir ROMs. |
