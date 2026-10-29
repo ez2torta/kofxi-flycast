@@ -46,6 +46,10 @@ Un equipo no disponible bloquea su aceptación, no elimina la plataforma.
    de estado aún pendientes, sin aceptación de optimización.
 4. Cerrar inventario/baseline exploratorio; luego implementar G1 y fijar
    presupuestos antes de optimizar. T08–T11 dependen de sus entregables previos.
+   El [subplan de estado/replay/memoria](kofxi/studies/state-replay-memory-plan.md)
+   (29-oct, diseño pendiente de ejecutar) coordina T01/T05/K02/T00/T08: recorder,
+   mapa AW, escritores, deltas y restauración. D (`fs_extracted`) sigue como candidato
+   experimental de RAM; sin aceptación de CPU, equivalencia de estado ni rollback.
 5. Abrir el catálogo KOF XI (`docs/kofxi/`) como frente de conocimiento con
    procedencia y confianza. Sus fichas avanzan junto al laboratorio;
    overlays/training esperan los contratos runtime necesarios.

@@ -31,7 +31,7 @@ catálogo pasan al [backlog](../tasks/backlog.md).
 | ID | Área | Estado inicial | Datos ya localizados |
 |---|---|---|---|
 | KOF-FMT | Formatos y compresión | Por catalogar | UNI y recursos gráficos; contratos detallados pendientes de importar con evidencia. |
-| KOF-MEM | Memoria/runtime | Hallazgos parciales | Algunas estructuras y offsets documentados; distinguir direcciones SH-4, offset RAM y dirección host. |
+| KOF-MEM | Memoria/runtime | Hallazgos parciales; plan de laboratorio | [Estado/replay/deltas](studies/state-replay-memory-plan.md): contrastar mapa AW/PS2, medir escrituras y validar snapshots antes de excluir estado. |
 | KOF-PLAY | Gameplay/frame data | Parcial | Pilotos de acciones y transiciones; no generalizar al roster. |
 | KOF-QOL | Features de usuario | Propuesta | Hitboxes, training, frame data, input display, repetición y análisis. |
 | KOF-ROM | Cartucho Atomiswave | Pipeline local aclarado; atribución dinámica pendiente | [Imagen procesada vs. AWCartridge](studies/aw-rom-processing.md) distingue ROMs `.dec` de `fs_extracted/`; no es una feature aceptada ni autoriza redistribuir ROMs. |
@@ -49,7 +49,11 @@ Para importar/restaurar el fixture en un build local, ver
 ## Esquema requerido por entrada
 
 Protocolo KOF-ROM: [benchmark de cartucho/G1ROM/recursos](studies/resource-benchmark-plan.md),
-con alternativas, gates numéricos y estimaciones de esfuerzo; aún sin resultados A/B.
+con alternativas, gates numéricos y estimaciones de esfuerzo. Hay
+[pilotos B/C/D](studies/experimental-rom-backends.md), sin A/B controlado aceptado.
+El [plan de estado, replay y memoria](studies/state-replay-memory-plan.md) fija el
+laboratorio para comprobar equivalencia y medir deltas; incluye la conclusión
+provisional de `fs_extracted` y separa snapshots locales de paquetes de red.
 
 Cada ficha se crea desde [`ENTRY-TEMPLATE.md`](ENTRY-TEMPLATE.md) e incluye:
 

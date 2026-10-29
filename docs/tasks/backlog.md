@@ -27,6 +27,12 @@ remotos creados todavía. El roadmap decide prioridad.
 
 ## Reglas para evitar bloqueos entre equipos
 
+Subplan documental del 29-oct para T01/T05/K02/T00/T08:
+[estado, replay y memoria](../kofxi/studies/state-replay-memory-plan.md). Está pendiente
+de ejecución: tomar cada lote y coordinar rutas/hooks antes de implementar.
+E1–E8 son entregables de ese estudio, no prioridades ni tareas rivales del roadmap.
+La evaluación GGPO/GekkoNet queda separada bajo T06 y requiere ADR.
+
 - T01–T07 pueden investigar/medir sus dominios en paralelo. Los contratos nuevos
   se integran vía T00 antes de depender de estructuras/funciones inventadas.
 - Rutas de código listadas son áreas propuestas: verificar ubicación real antes
