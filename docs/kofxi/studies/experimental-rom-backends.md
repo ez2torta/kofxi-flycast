@@ -273,3 +273,41 @@ de 40 s desde inicio de proceso y cierre normal; log local
 Pendientes: stage humano con D, anclas de estado y trazas guest/PIO en ejecución,
 restauración/rollback, pares A/B repetidos y otros SO/arquitecturas. Verificar bordes
 y archivos en arranque no demuestra fidelidad hardware ni equivalencia universal.
+
+## Corrida humana D del 2026-10-28, 23:08
+
+Fuente: `rom-benchmark-runs/20261028-230808-699-extracted/{run.json,flycast.log}`.
+EXE actual `DD605A...ADCA55A`, mismo ZIP identificado arriba. Usuario reporta reducción
+visible de RAM; no hay marcadores precisos de fase/personajes/stage en el log.
+1.057 entradas y 10.584 checks aprobados; 1.047 vistas de archivos, 12.735.980 bytes
+fallback. Cierre normal del renderer a 125,998 s. Sin errores logueados; warnings
+conocidos: autogen mipmaps B4G4R4A4 y BIOS regional 1 ausente en `awbios`.
+
+Método de agregación idéntico a la pareja B/C (CPU válida posterior a cart-init).
+Primer Resume a 9,663 s, pausa a 124,274 s. 114,615 s de intervalos, 75,391 s CPU
+proceso: 65,78 % de un core equivalente y 11,046 ms CPU/VBlank. Último resumen DMA:
+752.814 bloques / 24.090.032 bytes, bucle elapsed estimado 438,010 ms. Proveedor
+extraído atendió 11.400.649 words mapeados y 649.409 fallback (incluye consultas
+de metadatos, por eso la suma no es idéntica al total DMA).
+
+| Métrica observada | B humano previo | C humano previo | D humano |
+|---|---:|---:|---:|
+| Private commit final | 540,61 MiB | 546,13 MiB | 331,60 MiB |
+| Working set final | 516,28 MiB | 520,18 MiB | 328,51 MiB |
+| Pico commit, desde inicio | 552,43 MiB | 551,27 MiB | 445,16 MiB |
+| Pico working set, desde inicio | 522,13 MiB | 521,16 MiB | 459,41 MiB |
+
+Ventana temporal 35–85 s tras primer Resume, 25 intervalos/3.000 VBlanks:
+D 50,049 s, 59,942 VBlanks/s, 11,458 ms CPU/VBlank; private commit 298,29–320,18 MiB
+y working set 297,26–318,66 MiB. B/C dieron 12,115/11,271 ms CPU/VBlank en sus
+ventanas correspondientes, pero no se verificó igualdad de fase/acciones ni energía.
+
+Conclusión exploratoria: la reducción no aparece solo en private commit; también
+disminuyó el working set del proceso (~192 MiB al final frente a C). Los picos
+siguen elevados por la carga/verificación inicial de chips. La CPU de D resulta
+cercana a C, no hay mejora sostenida acreditada ni garantía de ausencia de stutter:
+la cadencia media de VBlank no es un p99 de frame ni FPS presentado. D usa otro EXE
+respecto a las corridas B/C históricas, con cambios en búsqueda de segmentos; estos
+porcentajes no sustituyen un A/B con mismo build/replay. No se midió memoria global
+OS/page cache ni prueba larga de fugas. La evidencia justifica continuar el piloto
+de D centrado en memoria, sin aceptación G3/rollback/fidelidad hardware.
