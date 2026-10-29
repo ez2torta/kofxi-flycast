@@ -80,6 +80,23 @@ un toolchain MinGW completo. No usar el `gcc.exe` de 32 bits del PATH para este
 build x64. Android/Switch requieren sus propios toolchains y no se configuran con
 este preset Windows.
 
+### Preset de laboratorio (`windows-msvc-lab`)
+
+Para el laboratorio de estado/replay de KOF XI existe un preset aparte que define
+a la vez `AW_CARTRIDGE_PROFILE` y `TEST_AUTOMATION`, en la carpeta
+`build-windows-msvc-lab/`:
+
+```powershell
+cmake --preset windows-msvc-lab
+cmake --build --preset windows-msvc-lab-release
+```
+
+Es un build **diagnóstico**, no el de uso diario: no sustituye ni enlaza sobre el
+Release stock, y su overhead de instrumentación se mide y se resta del A/B. El
+selector de backend de KOF XI y el futuro recorder de replay viven en este
+binario ([ADR 0002](../decisions/0002-lab-build-identity.md)). No mezclar presets
+en la misma carpeta.
+
 ## 5. Diagnóstico rápido
 
 ### VS Code dice que no encuentra CMake
@@ -134,3 +151,10 @@ configuró con Visual Studio 17 2022 x64 y MSVC 19.44.35229.0, y el build
 Hubo warnings de compilación en código upstream/dependencias, pero no impidieron
 el build. Esta verificación no cubre ejecución del emulador, Release ni otros
 targets (Linux/Android/Switch).
+
+Validado además el 2026-10-29 el preset de laboratorio: `cmake --preset
+windows-msvc-lab` y `cmake --build --preset windows-msvc-lab-release` generaron
+`build-windows-msvc-lab/Release/flycast.exe` con MSVC 19.44.35229 x64. Requirió un
+arreglo mínimo en la ruta bajo `TEST_AUTOMATION` (ver
+[ADR 0002](decisions/0002-lab-build-identity.md)); el stock `build-windows-msvc/`
+no se tocó. Tampoco cubre ejecución del emulador.

@@ -2,6 +2,7 @@
 param(
     [ValidateSet('original', 'segmented', 'decrypted', 'extracted')]
     [string]$Backend = 'original',
+    [string]$BuildDirectory = 'build-windows-msvc-lab',
     [string]$DecryptedPath = (Join-Path $PSScriptRoot '..\..\kofxi_aw_modding\decrypted'),
     [string]$ExtractedPath = (Join-Path $PSScriptRoot '..\..\kofxi_aw_modding\fs_extracted'),
     [switch]$DryRun
@@ -9,7 +10,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$exe = (Resolve-Path (Join-Path $repo 'build-windows-msvc-profile\Release\flycast.exe')).Path
+$buildPath = if ([IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory } else { Join-Path $repo $BuildDirectory }
+$exe = (Resolve-Path (Join-Path $buildPath 'Release\flycast.exe')).Path
 $rom = (Resolve-Path (Join-Path $repo 'roms\kofxi.zip')).Path
 if (Get-Process -Name flycast -ErrorAction SilentlyContinue) {
     throw 'Close Flycast normally before starting another benchmark.'
@@ -17,10 +19,13 @@ if (Get-Process -Name flycast -ErrorAction SilentlyContinue) {
 # Reject an old/stock binary rather than silently benchmarking the wrong backend.
 $binaryText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe))
 if (!$binaryText.Contains('all_chip_words_and_PIO_inverse') -or !$binaryText.Contains('AW host:')) {
-    throw 'Rebuild the instrumented Release with AW_CARTRIDGE_PROFILE first.'
+    throw 'Rebuild the lab Release with AW_CARTRIDGE_PROFILE first (cmake --preset windows-msvc-lab; cmake --build --preset windows-msvc-lab-release).'
+}
+if (!$binaryText.Contains('Input replay terminated') -or !$binaryText.Contains('Automation time-out')) {
+    throw 'The selected executable lacks TEST_AUTOMATION replay markers; use the windows-msvc-lab Release.'
 }
 if ($Backend -eq 'extracted' -and !$binaryText.Contains('all_extracted_bytes_and_G1_records')) {
-    throw 'Rebuild the instrumented Release with the extracted backend first.'
+    throw 'Rebuild the lab Release with the extracted backend first.'
 }
 $binaryText = $null
 if ($Backend -eq 'decrypted') {
@@ -50,6 +55,8 @@ if ($DryRun) {
 New-Item -ItemType Directory -Path $run | Out-Null
 [ordered]@{
     backend=$Backend
+    build_directory=(Split-Path (Split-Path $exe))
+    profile='AW_CARTRIDGE_PROFILE + TEST_AUTOMATION'
     executable=$exe
     executable_sha256=(Get-FileHash $exe -Algorithm SHA256).Hash
     rom_sha256=(Get-FileHash $rom -Algorithm SHA256).Hash

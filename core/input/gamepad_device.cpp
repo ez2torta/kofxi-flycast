@@ -92,7 +92,7 @@ bool GamepadDevice::handleButtonInput(int port, DreamcastKey key, bool pressed)
 			kcode[port] |= key;
 #ifdef TEST_AUTOMATION
 		if (record_input != NULL)
-			fprintf(record_input, "%ld button %x %04x\n", sh4_sched_now64(), port, kcode[port]);
+			fprintf(record_input, "%lld button %x %04x\n", (long long)sh4_sched_now64(), port, kcode[port]);
 #endif
 	}
 	else
@@ -927,9 +927,9 @@ void replay_input()
 	{
 		// Account for the swirl time
 		if (config::Broadcast == 0)
-			now = std::max((int64_t)now - 2152626532L, 0L);
+			now = std::max<int64_t>((int64_t)now - 2152626532LL, 0);
 		else
-			now = std::max((int64_t)now - 2191059108L, 0L);
+			now = std::max<int64_t>((int64_t)now - 2191059108LL, 0);
 	}
 	if (replay_file == NULL)
 	{
@@ -943,7 +943,7 @@ void replay_input()
 			kcode[next_port] = next_kcode;
 
 		char action[32];
-		if (fscanf(replay_file, "%ld %s %x %x\n", &next_event, action, &next_port, &next_kcode) != 4)
+		if (fscanf(replay_file, "%lld %s %x %x\n", (long long *)&next_event, action, &next_port, &next_kcode) != 4)
 		{
 			fclose(replay_file);
 			replay_file = NULL;

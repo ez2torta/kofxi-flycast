@@ -29,6 +29,19 @@
             "cacheVariables": {
                 "USE_DX9": "OFF"
             }
+        },
+        {
+            "name": "windows-msvc-lab",
+            "displayName": "Windows x64 — laboratorio KOF XI (replay + telemetría)",
+            "description": "Diagnostic build for the KOF XI replay/memory lab: defines AW_CARTRIDGE_PROFILE and TEST_AUTOMATION together. Output in build-windows-msvc-lab. It does not replace or relink the preserved stock Release (see docs/decisions/0002-lab-build-identity.md).",
+            "generator": "Visual Studio 17 2022",
+            "architecture": "x64",
+            "binaryDir": "${sourceDir}/build-windows-msvc-lab",
+            "cacheVariables": {
+                "USE_DX9": "OFF",
+                "TEST_AUTOMATION": "ON",
+                "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc /DAW_CARTRIDGE_PROFILE"
+            }
         }
     ],
     "buildPresets": [
@@ -42,6 +55,12 @@
             "name": "windows-msvc-release",
             "displayName": "Windows x64 — Release",
             "configurePreset": "windows-msvc",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-msvc-lab-release",
+            "displayName": "Windows x64 — laboratorio KOF XI, Release",
+            "configurePreset": "windows-msvc-lab",
             "configuration": "Release"
         }
     ]

@@ -38,11 +38,16 @@ Desde PowerShell en la raíz del repo, **una corrida por vez**:
 .\scripts\run-kofxi-rom-benchmark.ps1 -Backend decrypted -DryRun
 ```
 
-El script comprueba que no haya Flycast abierto y que EXE contenga los marcadores
-diagnósticos, fuerza logging, GGPO desactivado, BIOS real y auto-savestates desactivados
+El script usa por defecto `build-windows-msvc-lab/Release/flycast.exe` (preset
+`windows-msvc-lab`), comprueba que no haya Flycast abierto y que el EXE contenga los
+marcadores de `AW_CARTRIDGE_PROFILE` **y** `TEST_AUTOMATION`, fuerza logging, GGPO
+desactivado, BIOS real y auto-savestates desactivados
 mediante valores **transitorios**. Cada ejecución imprime su ruta de log/metadata:
-`build-windows-msvc-profile/Release/rom-benchmark-runs/<fecha>-<backend>/flycast.log`.
+`build-windows-msvc-lab/Release/rom-benchmark-runs/<fecha>-<backend>/flycast.log`
+(o bajo la carpeta indicada por `-BuildDirectory`).
 `run.json` conserva argumentos y SHA-256 del EXE y ZIP; no copia ROM ni saves.
+Para otra carpeta de build, pasar `-BuildDirectory`; el ejecutable debe igualmente
+contener ambas capacidades. `-DryRun` inspecciona la receta sin arrancar Flycast.
 Para D, `-ExtractedPath 'D:\mis archivos\fs_extracted'` sustituye la ruta por defecto
 `E:\github\kofxi_aw_modding\fs_extracted`; no requiere los `.dec`.
 La configuración, BIOS y NVRAM siguen junto al EXE, no se restauran automáticamente.
