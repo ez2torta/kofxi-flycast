@@ -6,6 +6,10 @@
 
 #include <xbyak/xbyak.h>
 #include <xbyak/xbyak_util.h>
+#if defined(_DEBUG) && defined(_WIN32)
+#include <atomic>
+#include <cstdlib>
+#endif
 using namespace Xbyak::util;
 
 #include "types.h"
@@ -16,6 +20,7 @@ using namespace Xbyak::util;
 
 #include "hw/sh4/sh4_core.h"
 #include "hw/sh4/sh4_mem.h"
+#include "hw/sh4/sh4_sched.h"
 #include "x64_regalloc.h"
 #include "xbyak_base.h"
 #include "oslib/unwind_info.h"
@@ -57,6 +62,52 @@ static const u8 *MemHandlerStart, *MemHandlerEnd;
 static UnwindInfo unwinder;
 #ifndef _WIN32
 static float xmmSave[4];
+#endif
+
+#if defined(_DEBUG) && defined(_WIN32)
+namespace
+{
+struct Sh4ReadTraceConfig
+{
+	u32 start;
+	u32 end;
+	bool enabled;
+};
+
+const Sh4ReadTraceConfig& sh4ReadTraceConfig()
+{
+	static const Sh4ReadTraceConfig config = [] {
+		const char *startText = std::getenv("KOFXI_SH4_READ_TRACE_START");
+		const char *endText = std::getenv("KOFXI_SH4_READ_TRACE_END");
+		if (startText == nullptr || endText == nullptr)
+			return Sh4ReadTraceConfig { 0, 0, false };
+		char *startEnd = nullptr;
+		char *endEnd = nullptr;
+		unsigned long start = std::strtoul(startText, &startEnd, 0);
+		unsigned long end = std::strtoul(endText, &endEnd, 0);
+		if (startEnd == startText || *startEnd != '\0' || endEnd == endText || *endEnd != '\0'
+				|| start > UINT32_MAX || end > UINT32_MAX || start >= end)
+			return Sh4ReadTraceConfig { 0, 0, false };
+		return Sh4ReadTraceConfig { (u32)start, (u32)end, true };
+	}();
+	return config;
+}
+
+void traceSh4Read(u32 pc, u32 address, u32 width, u32 value)
+{
+	static std::atomic<u32> eventOrdinal { 0 };
+	static std::atomic<u32> eventCount { 0 };
+	const Sh4ReadTraceConfig& config = sh4ReadTraceConfig();
+	if (!config.enabled || address < config.start || address >= config.end)
+		return;
+	u32 count = eventCount.fetch_add(1, std::memory_order_relaxed);
+	if (count >= 10000)
+		return;
+	u32 ordinal = eventOrdinal.fetch_add(1, std::memory_order_relaxed);
+	INFO_LOG(DYNAREC, "KOFXI_SH4_READ pc=%08x addr=%08x width=%u value=%08x cycle=%llu ordinal=%u",
+			pc, address, width, value, (unsigned long long)sh4_sched_now64(), ordinal);
+}
+}
 #endif
 
 static void ngen_blockcheckfail(u32 pc) {
@@ -131,7 +182,11 @@ public:
 
 		CheckBlock(force_checks, block);
 
+#if defined(_DEBUG) && defined(_WIN32)
+		sub(rsp, STACK_ALIGN + 0x10);
+#else
 		sub(rsp, STACK_ALIGN);
+#endif
 
 		if (mmu_enabled() && block->has_fpu_op)
 		{
@@ -230,6 +285,10 @@ public:
 							add(call_regs[0], dword[rax]);
 						}
 					}
+#if defined(_DEBUG) && defined(_WIN32)
+					// Preserve the guest effective address before MMU translation reuses call_regs[0].
+					mov(dword[rsp + STACK_ALIGN], call_regs[0]);
+#endif
 					genMmuLookup(block, op, 0);
 
 					int size = op.size == 1 ? MemSize::S8 : op.size == 2 ? MemSize::S16 : op.size == 4 ? MemSize::S32 : MemSize::S64;
@@ -247,6 +306,9 @@ public:
 						mov(rcx, rax);
 						host_reg_to_shil_param(op.rd, rcx);
 					}
+#if defined(_DEBUG) && defined(_WIN32)
+					traceRead(op, block, true, 0);
+#endif
 				}
 				break;
 
@@ -535,7 +597,11 @@ public:
 		}
 
 		L(exit_block);
+#if defined(_DEBUG) && defined(_WIN32)
+		add(rsp, STACK_ALIGN + 0x10);
+#else
 		add(rsp, STACK_ALIGN);
+#endif
 		ret();
 
 		ready();
@@ -965,8 +1031,34 @@ private:
 			}
 		}
 
+#if defined(_DEBUG) && defined(_WIN32)
+		u32 guestAddress = op.rs1.imm_value();
+		if (op.rs3.is_imm())
+			guestAddress += op.rs3.imm_value();
+		traceRead(op, block, false, guestAddress);
+#endif
+
 		return true;
 	}
+
+#if defined(_DEBUG) && defined(_WIN32)
+	void traceRead(const shil_opcode& op, RuntimeBlockInfo *block, bool addressOnStack, u32 immediateAddress)
+	{
+		// Controller polls use integer loads. Leave 64-bit/FPU operations untouched and explicit.
+		if (op.size != 1 && op.size != 2 && op.size != 4)
+			return;
+		if (regalloc.IsAllocf(op.rd))
+			return;
+		mov(call_regs[0], block->vaddr + op.guest_offs - (op.delay_slot ? 2 : 0));
+		if (addressOnStack)
+			mov(call_regs[1], dword[rsp + STACK_ALIGN]);
+		else
+			mov(call_regs[1], immediateAddress);
+		mov(call_regs[2], op.size);
+		shil_param_to_host_reg(op.rd, call_regs[3]);
+		GenCall(traceSh4Read);
+	}
+#endif
 
 	bool GenWriteMemImmediate(const shil_opcode& op, RuntimeBlockInfo* block)
 	{

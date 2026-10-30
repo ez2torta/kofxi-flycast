@@ -22,7 +22,7 @@ Un equipo no disponible bloquea su aceptación, no elimina la plataforma.
 |---|---|---|
 | S0 — Preparación de repositorio | Preparado localmente | Historial upstream, rama `kofxi-main`, documentación; ver procedencia. Sin commit propio/publicación todavía. |
 | G0 / FCT-00 — Bases y viabilidad | Pendiente | Builds originales, instalaciones aisladas, recorrido natural, equipos/toolchains. |
-| G1 — Laboratorio | Pendiente | Inputs/anclas, medición portable, presupuestos y baseline. K01 puede avanzar en paralelo. |
+| G1 — Laboratorio | Pendiente | Inputs/anclas, medición portable, presupuestos y baseline. K01 puede avanzar en paralelo. El stage A/B B-vs-D permanece bloqueado: T00 (dueño asume; decisiones parciales y hooks Debug/lab acotados) ya tiene captura scratch de lectura SH-4/dynarec correlacionada por rango/alias con los ocho destinos Maple (ambos streams capados), hook A0 directo de RAM-test/lecturas idle (`0x0f`) y sonda post-timeslice que observó Maple pendiente y luego el candidato drained (muestras/streams capados). La última no demuestra correlación exhaustiva, drain global ni límite de step. Falta validar coin activa/transformación y step VBlank+drain, completar revisión formal. Decisiones fijadas: `sh4_sched_now64()`+ordinal, coin por slot y step VBlank+drain. T08: checkpoint debe incluir `mapleInputState[4]`+cursor; revisión técnica aún no completada. T01 recorder-player condicionado. No hay paquete checkpoint+cursor, replay ni anclas comunes; ver [backlog T01/T05](tasks/backlog.md) y [paquete P0/E1](kofxi/studies/state-replay-p0-t05-review-package.md) §§4.11–4.14. |
 | G2 — Integridad rollback | Pendiente | 10 000 restauraciones, estado completo y comparación x86-64/ARM64. |
 | G3 — Optimización | Pendiente | A/B y recursos por dispositivo; conservar comportamiento. |
 | G4 — Red y cross-play | Pendiente | Matriz plataformas/red/relay con hashes confirmados. |
@@ -50,6 +50,10 @@ Un equipo no disponible bloquea su aceptación, no elimina la plataforma.
    (29-oct, diseño pendiente de ejecutar) coordina T01/T05/K02/T00/T08: recorder,
    mapa AW, escritores, deltas y restauración. D (`fs_extracted`) sigue como candidato
    experimental de RAM; sin aceptación de CPU, equivalencia de estado ni rollback.
+   El ensayo de stage B/D requiere primero un replay T01 con checkpoint/cursor e
+   inputs/anclas comunes; T00 continúa `NEEDS_EVIDENCE` y la revisión T08 asumida por
+   el dueño aún no está completada (detalles en backlog y paquete P0/E1). La traza de
+   coin/Maple allí registrada es exploratoria, no aceptación ni prueba de `input-consumed`.
 5. Abrir el catálogo KOF XI (`docs/kofxi/`) como frente de conocimiento con
    procedencia y confianza. Sus fichas avanzan junto al laboratorio;
    overlays/training esperan los contratos runtime necesarios.

@@ -13,3 +13,7 @@ void CalculateSync();
 void read_lightgun_position(int x, int y);
 void scheduleRenderDone(TA_context *cntx);
 void rescheduleSPG();
+
+#if defined(_DEBUG) && defined(_WIN32)
+u32 spg_diag_vblank_count();
+#endif

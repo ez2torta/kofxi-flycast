@@ -40,6 +40,9 @@ u32 fskip;
 static u32 lightgun_line = 0xffff;
 static u32 lightgun_hpos;
 static bool maple_int_pending;
+#if defined(_DEBUG) && defined(_WIN32)
+static u32 kofxiDiagVblankCount;
+#endif
 
 #ifdef LIBRETRO
 extern void retro_setfps(double fps);
@@ -125,6 +128,9 @@ static int spg_line_sched(int tag, int cycles, int jitter, void *arg)
 
 		if (SPG_VBLANK_INT.vblank_out_interrupt_line_number == prv_cur_scanline)
 		{
+#if defined(_DEBUG) && defined(_WIN32)
+			kofxiDiagVblankCount++;
+#endif
 			maple_vblank();
 			asic_RaiseInterrupt(holly_SCANINT2);
 		}
@@ -269,6 +275,13 @@ bool spg_Init()
 	return true;
 }
 
+#if defined(_DEBUG) && defined(_WIN32)
+u32 spg_diag_vblank_count()
+{
+	return kofxiDiagVblankCount;
+}
+#endif
+
 void spg_Term()
 {
 	sh4_sched_unregister(render_end_schid);
@@ -280,6 +293,9 @@ void spg_Term()
 void spg_Reset(bool hard)
 {
 	CalculateSync();
+#if defined(_DEBUG) && defined(_WIN32)
+	kofxiDiagVblankCount = 0;
+#endif
 
 	SH4FastEnough = false;
 	cpu_time_idx = 0;

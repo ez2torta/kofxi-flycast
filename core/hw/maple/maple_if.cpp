@@ -9,6 +9,17 @@
 #include "hw/naomi/card_reader.h"
 
 #include <memory>
+#if defined(_DEBUG) && defined(_WIN32)
+#include <atomic>
+#endif
+
+#if defined(_DEBUG) && defined(_WIN32)
+namespace
+{
+std::atomic<u32> kofxiMapleDiagOrdinal { 0 };
+std::atomic<u32> kofxiMapleDiagCount { 0 };
+}
+#endif
 
 enum MaplePattern
 {
@@ -326,6 +337,15 @@ static int maple_schd(int tag, int cycles, int jitter, void *arg)
 			size_t size = pair.second.size() * sizeof(u32);
 			u32 *p = (u32 *)GetMemPtr(pair.first, size);
 			memcpy(p, pair.second.data(), size);
+#if defined(_DEBUG) && defined(_WIN32)
+			u32 count = kofxiMapleDiagCount.fetch_add(1, std::memory_order_relaxed);
+			if (count < 10000)
+			{
+				u32 ordinal = kofxiMapleDiagOrdinal.fetch_add(1, std::memory_order_relaxed);
+				INFO_LOG(MAPLE, "KOFXI_MAPLE_DMA dest=%08x size=%u cycle=%llu ordinal=%u",
+						pair.first, (unsigned)size, (unsigned long long)sh4_sched_now64(), ordinal);
+			}
+#endif
 		}
 		SB_MDST = 0;
 		asic_RaiseInterrupt(holly_MAPLE_DMA);
@@ -339,6 +359,14 @@ static int maple_schd(int tag, int cycles, int jitter, void *arg)
 
 	return 0;
 }
+
+#if defined(_DEBUG) && defined(_WIN32)
+MapleDiagState maple_get_diag_state()
+{
+	return { SB_MDST != 0, (u32)mapleDmaOut.size(),
+			maple_schid >= 0 && sh4_sched_is_scheduled(maple_schid) };
+}
+#endif
 
 static void maple_SB_MDAPRO_Write(u32 addr, u32 data)
 {

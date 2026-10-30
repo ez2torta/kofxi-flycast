@@ -316,3 +316,220 @@ respecto a las corridas B/C históricas, con cambios en búsqueda de segmentos; 
 porcentajes no sustituyen un A/B con mismo build/replay. No se midió memoria global
 OS/page cache ni prueba larga de fugas. La evidencia justifica continuar el piloto
 de D centrado en memoria, sin aceptación G3/rollback/fidelidad hardware.
+
+## Smoke aislado A/B/C/D con build común (2026-10-29)
+
+Objetivo limitado: comprobar que las cuatro selecciones alcanzan `cart-init` con
+un mismo binario y recoger una única muestra exploratoria de memoria durante un
+arranque **sin input**. No se jugó un stage, no se registraron personajes/escenas
+y no hay replay T01 con anclas; por ello no es un A/B formal de combate, CPU ni
+equivalencia guest.
+
+### Receta e identidad
+
+- EXE del preset `windows-msvc-lab`, copiado byte por byte a cuatro directorios
+  aislados junto a su propia configuración y `data/`: SHA-256
+  `ED9A55C0AAEC951BE319D3A820A4CAC149BFF09BB92735C2E42E065CA50EFDAD`.
+- ROM `kofxi.zip`: SHA-256
+  `8FBAFB8615986981E17E49E49A80AC4806B3E758A36A1880F7B528D1BFF19D44`.
+  BIOS `awbios.zip`: SHA-256
+  `DC44E2FA5F3184F6502E2544B1590223437C366CDFC9E3983CCB32D83C350772`.
+- Config `emu.cfg` idéntica en los cuatro perfiles, hash SHA-256
+  `13E79E1A1D7E9A9A1E6F5FB0FD3079D385EB9D76C8A25DEBA713808539DE0B17`:
+  ContentPath/BiosPath al directorio local `roms`, `Region=0`, `Language=1`,
+  `UseReios=no`, auto-load/save state desactivados. El launcher añadió logging,
+  GGPO off y el backend seleccionado; solo los perfiles C/D tienen su ruta de
+  assets específica.
+- Región 0 se eligió porque el catálogo AW (`core/hw/naomi/naomi_roms.cpp:38-48`)
+  y la cabecera de juego registrados en el [baseline P0](state-replay-p0-baseline.md)
+  identifican `bios0.ic23` como región 0. Un primer pase con `Region=1` dio el
+  mismo warning “Region 1 bios not found in awbios” en los cuatro casos y se
+  excluye de esta tabla. Con región 0 no salió ese warning; sí se repitió en las
+  cuatro corridas el warning DX11 conocido de autogeneración de mipmaps B4G4R4A4.
+- Runs: `20261029-103845-471-original`, `20261029-103932-756-segmented`,
+  `20261029-104019-746-decrypted`, `20261029-104106-665-extracted`. Metadatos y
+  logs están solo bajo el temp local aprobado
+  `$env:LOCALAPPDATA\Temp\opencode\kofxi-t05-region0-isolated-20261029-1530\`;
+  ROM/BIOS no se copiaron. Cada EXE tuvo `data/` propia, no se reutilizó ni se
+  sobrescribió la NVRAM personal. Los cuatro Flycast se cerraron normalmente tras
+  unos 45 s; no quedó proceso activo.
+- Comando por perfil: `.\scripts\run-kofxi-rom-benchmark.ps1 -Backend <backend>
+  -BuildDirectory <temp-root>\<backend>`. Se dejó cada proceso correr unos 45 s
+  sin input intencional y se cerró con `CloseMainWindow`; el runner registra
+  argumentos, hashes de EXE/ROM y ruta de log en `run.json`.
+
+### Observaciones (una pasada, orden A→B→C→D)
+
+El tiempo de cart-init es el timestamp del log desde que inició Flycast, no una
+medición aislada de lectura de ROM o tiempo hasta menú. La memoria es la última
+muestra del proceso al cerrar aproximadamente a los 45 s; picos desde el arranque.
+
+| Backend | Storage lógico del cartucho | Cart-init (log) | Private bytes al cierre | Working set al cierre | Pico private commit | Pico working set |
+|---|---:|---:|---:|---:|---:|---:|
+| A original | 320 MiB | 1,742 s | 568,73 MiB | 564,08 MiB | 572,90 MiB | 565,93 MiB |
+| B segmented | 232 MiB | 1,782 s | 481,34 MiB | 476,16 MiB | 485,43 MiB | 477,94 MiB |
+| C decrypted | 232 MiB | 20,282 s | 481,56 MiB | 476,48 MiB | 485,25 MiB | 482,83 MiB |
+| D extracted | 232,00025 MiB | 10,329 s | 262,86 MiB | 266,71 MiB | 443,51 MiB | 470,89 MiB |
+
+En esta muestra, respecto de A, B/C terminan con ~87 MiB menos de private bytes y
+~88 MiB menos de working set; D, ~306/~297 MiB menos respectivamente. D todavía
+alcanza picos de ~444 MiB commit y ~471 MiB working set durante inicialización.
+La lectura `rom_storage_bytes` valida la representación que reporta el driver,
+no memoria física global: D usa archivos mapeados, y el page cache del OS no está
+medido. La validación inicial de C/D y sus cart-init más tardíos quedan incluidos;
+no se extrapola ese coste a carga de stage ni al combate.
+
+Validación de selección por log: B reporta `backend=segmented` y
+`validation=catalogued_segments`; C verificó los ocho chips y
+`PIO_inverse=passed`; D reportó 1.057 archivos, 10.584 checks de bordes aprobados,
+230.533.911 bytes mapeados y 12.735.980 bytes de fallback. A reportó
+`backend=original`. Región 0 y `UseReios=no` se solicitaron en la config, y ya no
+apareció el warning de BIOS región 1; aun así no se capturó una identificación
+positiva del BIOS realmente cargado, así que esa identidad no se declara verificada.
+
+CPU por VBlank en las últimas muestras no se interpreta: se dejó correr sin
+interacción, las fases y el número de VBlanks al pausar difieren, y los valores
+son de baja actividad. No demuestra mejora de CPU, juego fluido, igualdad de
+estado, comportamiento visual ni reducción de stutter. Una única pasada ordenada
+tampoco separa efectos de caché/orden ni cuantifica variación. El host/energía y
+la temperatura no se registraron en esta corrida.
+
+### Decisión
+
+El smoke confirma que el EXE común acepta los cuatro backends y alcanza el hook
+`cart-init` con región 0, sin error `E[` en los logs. La muestra apoya continuar
+investigando el ahorro de working set de B/C/D, especialmente D, pero no cierra
+la decisión de optimización: falta una receta T01 con estado/replay verificable,
+escenario de stage común, mediciones repetidas AB/BA, fases marcadas, CPU/GPU/OS
+page cache y control de temperatura. No es aceptación G3 ni rollback/fidelidad
+hardware.
+
+### Repetición exploratoria B/D sin input (2026-10-29)
+
+Para comprobar si la diferencia de memoria del smoke anterior sobrevivía a una
+repetición, corrí cuatro procesos aislados en orden **D–B–B–D** (`extracted`,
+`segmented`, `segmented`, `extracted`), 45 s por proceso desde el inicio y cierre
+normal. No se introdujo input ni se seleccionaron personajes/stage; no es un replay
+ni una prueba de combate. Cada perfil usó una carpeta `Release` temporal nueva con
+el mismo EXE, el mismo `emu.cfg` de región 0 (SHA-256
+`13E79E1A1D7E9A9A1E6F5FB0FD3079D385EB9D76C8A25DEBA713808539DE0B17`) y `data/`
+vacía al arrancar; no se copiaron ROM, BIOS ni NVRAM. La ROM se leyó desde su ruta
+local; su SHA-256 fue `8FBAFB8615986981E17E49E49A80AC4806B3E758A36A1880F7B528D1BFF19D44`;
+BIOS `awbios.zip`: `DC44E2FA5F3184F6502E2544D1590223437C366CDFC9E3983CCB32D83C350772`.
+La config solicita BIOS real (`UseReios=no`), pero el log no confirma positivamente
+qué BIOS fue cargada.
+En los cuatro `run.json`, el EXE coincide byte por byte (SHA-256
+`ED9A55C0AAEC951BE319D3A820A4CAC149BFF09BB92735C2E42E065CA50EFDAD`). Los datos
+runtime creados quedaron bajo perfiles temporales no versionados.
+
+Memoria del proceso según `AW host`, muestras al cierre cerca de 45 s y máximos
+desde el inicio. La primera columna de memoria por proceso es la muestra más cercana
+a 15 s tras `cart-init` (el logger muestrea por intervalos, así que no cae exactamente
+en 15 s):
+
+| Backend/run | `cart-init` desde inicio | Muestra tras init | Private / WS en esa muestra | Private / WS al cierre (~45 s) | Pico commit / pico WS |
+|---|---:|---:|---:|---:|---:|
+| D `135320-055` | 24,785 s | +13,362 s | 261,56 / 265,72 MiB | 261,55 / 265,75 MiB | 443,08 / 470,93 MiB |
+| B `135407-595` | 1,874 s | +13,417 s | 480,57 / 476,55 MiB | 480,16 / 476,40 MiB | 484,26 / 478,19 MiB |
+| B `135454-578` | 1,843 s | +16,851 s | 481,51 / 476,86 MiB | 480,37 / 476,22 MiB | 484,78 / 478,25 MiB |
+| D `135541-515` | 10,575 s | +16,663 s | 262,90 / 265,59 MiB | 263,93 / 266,77 MiB | 444,54 / 470,93 MiB |
+
+En estos dos pares exploratorios, D mostró aproximadamente **219 MiB menos de
+private bytes** y **211 MiB menos de working set** que B en las muestras tardías.
+El patrón también aparece en las muestras finales. Sin embargo, el pico de working
+set solo bajó ~7 MiB y el pico de commit ~40–41 MiB: los picos de validación siguen
+siendo relevantes. En D se verificaron en ambas corridas 1.047 archivos mapeados,
+230.533.911 bytes y 12.735.980 bytes de fallback; los logs no contienen `E[` y
+terminan con cierre normal.
+
+La variación de `cart-init` de D (10,575–24,785 s) es grande frente a B (1,843–1,874 s).
+No se controló ni vació la caché del sistema de archivos, así que no se atribuye la
+variación a caché fría/caliente ni se toma como un coste estable. Tampoco se midió
+memoria global/page cache, energía/temperatura, p99 de frame o fases jugables. La
+disminución tardía del consumo **del proceso** apoya continuar el piloto de RAM para
+D, pero no demuestra ahorro equivalente de RAM física del sistema, mejor rendimiento,
+equivalencia de combate ni aceptación G3. Es evidencia host dirigida, con dos muestras
+por backend y sin replay; no sustituye los pares repetidos del plan de recursos.
+
+Los cuatro `run.json` y logs se conservan localmente, no en Git, bajo
+`%LOCALAPPDATA%\Temp\opencode\kofxi-t05-repeat-20261029-135237-0ab07373\`.
+
+### Sesión manual 1P vs 2P: D/B (2026-10-29)
+
+Tras el smoke sin input hice una prueba exploratoria con una pelea local 1P vs 2P
+por backend, según el reporte del usuario. No se grabaron inputs ni vídeo; el logger
+no identifica jugadores, personajes, stage ni comienzo/fin de la pelea. Por ello las
+duraciones de abajo son del proceso/log completo —incluyen arranque, menús y cierre—,
+no el tiempo cronometrado de combate ni sesiones pareadas.
+
+Se usaron los perfiles temporales aislados `extracted` y `segmented`, preparados con
+`data/` vacío y sin copiar ROM, BIOS ni NVRAM personal. Ambas `run.json` identifican el mismo EXE
+(SHA-256 `ED9A55C0AAEC951BE319D3A820A4CAC149BFF09BB92735C2E42E065CA50EFDAD`) y ROM
+(`8FBAFB8615986981E17E49E49A80AC4806B3E758A36A1880F7B528D1BFF19D44`). Los archivos
+`emu.cfg` finales de ambos perfiles tienen el mismo SHA-256
+`670F0898135E41CF1F568986671F882CB2BA2AAD15E09747B752D984DDEFF2BB`. Cada perfil
+generó sus propios archivos runtime de datos; no se restauró un estado ni una NVRAM.
+La selección del backend y la ruta de assets variaron según lo esperado, pero los
+perfiles de entrada no quedaron idénticos: `extracted/mappings/` contiene
+`SDL_Keyboard_arcade.cfg` y `SDL_Default Mouse_arcade.cfg`; `segmented/mappings/`
+solo contiene `SDL_Default Mouse_arcade.cfg`. No se registró qué mandos físicos
+participaron ni se verificó igualdad de mapeos; esto limita aún más la comparación.
+El BIOS se solicitó desde la misma ruta local y con `UseReios=no`, pero el log no
+certifica qué BIOS se cargó positivamente.
+
+Resumen calculado de las muestras `AW host` con `memory_valid=1`; p50/p95 usan
+nearest-rank. Private bytes y working set son **del proceso**; máximos muestreados no
+son memoria global del sistema:
+
+| Backend | Proceso/log | `cart-init` | Muestras | CPU p50 (ms/VBlank) | Private p50/p95/máx/final | WS p50/p95/máx/final | Pico commit / pico WS |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| D `extracted` | 524,683 s | 11,130 s | 132 | 0,521 | 312,61 / 330,10 / 334,49 / 330,68 MiB | 331,66 / 357,96 / 362,15 / 361,25 MiB | 443,52 / 470,80 MiB |
+| B `segmented` | 423,199 s | 1,983 s | 120 | 0,781 | 530,94 / 545,43 / 551,88 / 547,19 MiB | 518,34 / 529,51 / 533,79 / 533,77 MiB | 554,38 / 535,62 MiB |
+
+Los dos logs terminaron con cierre normal del renderer, sin `E[` (0 errores de ese
+nivel). En esta pareja manual se observa menos memoria del proceso para D en las
+muestras y picos registrados: frente a B, D tuvo ~218,33 MiB menos de Private p50,
+~186,68 MiB menos de WS p50 y ~110,86/~64,82 MiB menos de pico commit/WS. Pero los
+mapeos, duración, selección/escena y secuencia no se controlaron ni anotaron. `cart-init`
+y CPU/VBlank tampoco son una comparación de rendimiento bajo carga equivalente. La
+señal justifica continuar la investigación de memoria; no demuestra que toda la diferencia
+se traduzca en RAM física libre, ni que D sea más rápido, visualmente equivalente o mejor
+para rollback. No es A/B reproducible, no satisface el gate de replay T01/T00/T08, y no
+es aceptación G1/G3.
+
+`run.json` y logs completos quedan localmente, sin versionar ROM/BIOS/NVRAM, bajo
+`%LOCALAPPDATA%\Temp\opencode\kofxi-t05-2p-20261029-142300\` (`extracted/Release/rom-benchmark-runs/20261029-142317-352-extracted/`
+y `segmented/Release/rom-benchmark-runs/20261029-143300-660-segmented/`). El logger
+muestrea cada ~3,7 s e incluye menús/idle: no se dispone de fases de combate marcadas,
+inputs consumidos, anclas guest, temperaturas ni medición de page cache.
+
+### Siguiente gate T05 y bloqueo vigente
+
+El worktree revisado en esta iteración no contiene un harness de replay: `benchmarks/`
+solo tiene su README de laboratorio pendiente, no hay player/recorder P1 en `scripts/`
+ni paquete con estado inicial y anclas en los artefactos versionados. El replay
+Fightcade estudiado tampoco aportó su cuerpo binario. Por tanto, no hay un input común
+reproducible con el que iniciar el ensayo de stage; este smoke no llena ese vacío.
+
+El paso verificable antes de una comparación de stage es completar la revisión T01/T00/T08
+del contrato P0/E1 y del diseño P1: el dueño ya decidió que `input-consumed` exige
+lectura SH-4 real (incluida dynarec), no solo respuesta Maple entregada; eligió coin desde
+fuentes por slot y validar cada retorno A0 `0x280`, y fijó `sh4_sched_now64()`+ordinal
+monótono, y step hasta el siguiente VBlank con drain de DMA/callbacks iniciados. Debe
+validarse el predicado de drain y la revisión del checkpoint quiescente; el dueño decide
+incluir `mapleInputState[4]` completo+cursor, pendiente de validar en serializer/restore
+y propiedad de buffers/hilo.
+T01 debe producir entonces un paquete de replay identificado, con estado inicial,
+inputs consumidos, anclas y cierre íntegro, y probar que se reproduce desde proceso
+nuevo antes de usarlo igual en A/B/C/D. Las preguntas del contrato siguen abiertas en
+[`state-replay-p0-temporal-contract-proposal.md`](state-replay-p0-temporal-contract-proposal.md)
+y los gates/controles están en [`state-replay-p1-lab-design.md`](state-replay-p1-lab-design.md).
+El [paquete de revisión T05](state-replay-p0-t05-review-package.md) convierte esas
+preguntas en recomendaciones concretas para respuesta de Maple, monedas y checkpoint;
+permanece explícitamente pendiente de revisión, no aprobado.
+El backlog asigna a esta sesión la subtarea recorder/player T01; el dueño asume las
+revisiones T00/T08, aún pendientes de evidencia/validación. Se autoriza solo el hook
+temporal Debug/laboratorio post-load de `shop_readm`, coordinado con T08. Esto no autoriza
+recorder/player integrado, cambios de scheduler/serialización, ni GGPO. Hasta completar
+la traza y cerrar gates, T05
+queda limitado a evidencia host exploratoria y no se ejecuta stage A/B.

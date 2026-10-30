@@ -57,3 +57,21 @@ primera divergencia + comandos + límites. Rendimiento sin trazado pesado;
 medir overhead del harness. CPU/GPU, tiempo guest, pacing y red por separado.
 Repeticiones/IC95 %/umbrales del plan obligatorios. Usar plantilla de evidencia.
 Un PASS de compilación no acepta juego, rollback, plataforma ni netcode.
+
+### Decisiones parciales del piloto B/D (2026-10-29; no contrato global v0)
+
+El dueño del proyecto asume T00 y fija para este piloto: `input-consumed` requiere
+lectura real SH-4 (incluida la ruta dynarec ejecutada), con ciclo guest
+`sh4_sched_now64()` y ordinal monótono; coin se reproduce desde fuentes por slot,
+ejecutando la transformación original y verificando cada retorno A0 `0x280`; un step
+parte de una frontera quiescente, pasa el siguiente VBlank y termina después de drenar
+DMA/callbacks ya iniciados, pudiendo contener cero o más lecturas. El checkpoint lógico
+T08 incluye `mapleInputState[4]` completo y cursor replay. No se presume compatibilidad
+de savestates entre backends/builds.
+
+El dueño autoriza solo un hook temporal post-load de `shop_readm` para Debug/laboratorio,
+bajo coordinación T08. El hook no habilita recorder/player, cambios de scheduler o
+serialización, ni comparación B/D. T00 sigue `NEEDS_EVIDENCE` hasta obtener traza SH-4
+real/dynarec y validar el predicado de drain; T08 requiere revisión de serializer,
+restore y atomicidad. Ver [propuesta temporal](../kofxi/studies/state-replay-p0-temporal-contract-proposal.md)
+y [paquete de revisión](../kofxi/studies/state-replay-p0-t05-review-package.md).

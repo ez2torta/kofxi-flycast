@@ -6,8 +6,10 @@ E2. Autoridad: [roadmap](../../roadmap.md); fases y puertas en
 auditoría previas en [P0](state-replay-p0-baseline.md), que este documento asume.
 
 Alcance: forma del paquete, definición de "input consumido", estrategia de anclas,
-boceto de CLI, corpus y controles. **No** autoriza tocar scheduler, serialización,
-dynarec, GGPO ni memwatch; eso requiere contrato T00/T08. No es un compromiso de API
+boceto de CLI, corpus y controles. No autoriza tocar scheduler, serialización, GGPO ni
+memwatch. El dueño autorizó separadamente un hook temporal post-load en `shop_readm`,
+solo Debug/laboratorio y coordinado con T08, para obtener evidencia T00; esto no habilita
+recorder/player integrado ni cambios de contrato compartido. No es un compromiso de API
 pública.
 
 ## 1. Dependencias
@@ -15,9 +17,9 @@ pública.
 | Depende de | Qué aporta | Estado |
 |---|---|---|
 | P0 (§1-§6 del baseline) | identidad, frontera temporal, build del laboratorio | borrador |
-| T00 | contrato `capture/restore/step/input-consumed`, propiedad de buffers/hilos | sin asignar |
-| T08 | revisión de rollback/memwatch y de la distancia a un estado canónico | sin asignar |
-| T01 | replay, estado inicial, corpóreo y anclas | sin asignar |
+| T00 | contrato `capture/restore/step/input-consumed`, propiedad de buffers/hilos | NEEDS_EVIDENCE; dueño fija lectura SH-4/dynarec, coin fuente-por-slot→A0 verificado, ciclo `sh4_sched_now64()`+ordinal y step VBlank+drain; falta traza/validar predicado de drain y resto formal |
+| T08 | revisión de rollback/memwatch y de la distancia a un estado canónico | Dueño asume revisión; decide checkpoint con `mapleInputState[4]` completo+cursor; validar serializer/restore, atomicidad e hilo sigue pendiente |
+| T01 | replay, estado inicial, corpus y anclas | subtarea recorder/player asignada a esta sesión; implementación core bloqueada por T00/T08 |
 
 Sin P0 cerrado, el recorder no puede declarar identidad ni comparar sesiones.
 
@@ -25,10 +27,10 @@ Sin P0 cerrado, el recorder no puede declarar identidad ni comparar sesiones.
 
 1. **Reloj candidato** = `sh4_sched_now64()` en la frontera de observación. Vblank
    es contexto, no se declara tick ni equivale a cada input consultado.
-2. **Evento consumido (pendiente T00/T08)** = valor observable por acceso guest:
-   respuesta Maple efectivamente entregada y lectura AW A0 `0x280` para monedas.
-   `MapleConfigMap::GetInput()` es solo fuente intermedia; no prueba que el guest
-   leyera la respuesta.
+2. **Evento consumido (decisión parcial T00)** = lectura SH-4 real del valor, incluida
+   la ruta dynarec activa; respuesta Maple entregada es solo telemetría. Para coin, se
+   reproducen fuentes por slot, se ejecuta la transformación AW original y se verifica
+   cada retorno A0 `0x280`.
 3. **Estado inicial** = savestate completo en la frontera acordada, incluyendo los
    hilos, colas y buffers que T00/T08 declaren como parte del contrato.
 4. Nada de punteros host en el paquete. Nada de alinear tiempos para "cuadrar".
@@ -36,7 +38,9 @@ Sin P0 cerrado, el recorder no puede declarar identidad ni comparar sesiones.
 Replay debe reproducir los **mismos valores observables por el guest**, no las mismas
 teclas pulsadas; si el guest no realizó el acceso, el evento no debería existir en el
 flujo efectivo. Los puntos precisos aún no están aprobados; ver la
-[propuesta temporal T00/T08](state-replay-p0-temporal-contract-proposal.md).
+   [propuesta temporal T00/T08](state-replay-p0-temporal-contract-proposal.md). El
+   hook temporal está implementado para Debug Windows x64; la cobertura runtime
+   requerida por T00 sigue sin estar demostrada.
 
 ## 3. Forma del paquete (boceto)
 

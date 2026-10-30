@@ -22,6 +22,9 @@
 #include "input/haptic.h"
 #include "network/output.h"
 #include "serialize.h"
+#if defined(_DEBUG) && defined(_WIN32)
+#include <atomic>
+#endif
 
 namespace atomiswave
 {
@@ -30,6 +33,21 @@ static bool aw_ram_test_skipped;
 static u8 aw_maple_devs;
 static u64 coin_chute_time[4];
 static u8 awDigitalOuput;
+
+#if defined(_DEBUG) && defined(_WIN32)
+static void traceA0CoinRead(u64 cycle, u32 size, bool ramTest, u8 coinSlots, u8 value)
+{
+	static std::atomic<u32> eventCount { 0 };
+	u32 ordinal = eventCount.fetch_add(1, std::memory_order_relaxed);
+	if (ordinal >= 10000)
+		return;
+	INFO_LOG(NAOMI, "KOFXI_A0_COIN_READ cycle=%llu ordinal=%u size=%u branch=%s slots=%x timers=%llu,%llu,%llu,%llu value=%02x",
+			(unsigned long long)cycle, ordinal, size, ramTest ? "ram-test" : "coin",
+			coinSlots,
+			(unsigned long long)coin_chute_time[0], (unsigned long long)coin_chute_time[1],
+			(unsigned long long)coin_chute_time[2], (unsigned long long)coin_chute_time[3], value);
+}
+#endif
 
 void reset() {
 	aw_ram_test_skipped = false;
@@ -56,15 +74,20 @@ u32 readMem_A0_006(u32 addr, u32 size)
 		{
 			// Skip RAM test at startup
 			aw_ram_test_skipped = true;
+#if defined(_DEBUG) && defined(_WIN32)
+			traceA0CoinRead(sh4_sched_now64(), size, true, 0, 0);
+#endif
 			return 0;
 		}
 		{
 			u8 coin_input = 0xF;
 			u64 now = sh4_sched_now64();
+			u8 coin_slots = 0;
 			for (int slot = 0; slot < 4; slot++)
 			{
 				if (maple_atomiswave_coin_chute(slot))
 				{
+					coin_slots |= 1 << slot;
 					// ggx15 needs 4 or 5 reads to register the coin but it needs to be limited to avoid coin errors
 					// 1 s of cpu time is too much, 1/2 s seems to work, let's use 100 ms
 					if (coin_chute_time[slot] == 0 || now - coin_chute_time[slot] < SH4_MAIN_CLOCK / 10)
@@ -79,6 +102,9 @@ u32 readMem_A0_006(u32 addr, u32 size)
 					coin_chute_time[slot] = 0;
 				}
 			}
+#if defined(_DEBUG) && defined(_WIN32)
+			traceA0CoinRead(now, size, false, coin_slots, coin_input);
+#endif
 			return coin_input;
 		}
 

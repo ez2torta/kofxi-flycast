@@ -10,6 +10,10 @@
 #include "../sh4_interrupts.h"
 #include "hw/sh4/sh4_mem.h"
 #include "../sh4_sched.h"
+#if defined(_DEBUG) && defined(_WIN32)
+#include "hw/maple/maple_if.h"
+#include "hw/pvr/spg.h"
+#endif
 #include "../sh4_cache.h"
 #include "debug/gdb_server.h"
 #include "../sh4_cycles.h"
@@ -182,10 +186,35 @@ int UpdateSystem_INTC()
 	Sh4cntx.sh4_sched_next -= SH4_TIMESLICE;
 	if (Sh4cntx.sh4_sched_next < 0)
 		sh4_sched_tick(SH4_TIMESLICE);
-	if (Sh4cntx.interrupt_pend)
-		return UpdateINTC();
-	else
-		return 0;
+	int result = Sh4cntx.interrupt_pend ? UpdateINTC() : 0;
+#if defined(_DEBUG) && defined(_WIN32)
+	static u32 lastVblankCount;
+	static u32 lastPendingResponses;
+	static bool lastDmaStarted;
+	static bool lastCallbackScheduled;
+	static bool haveProbeState;
+	static u32 loggedSamples;
+	u32 vblankCount = spg_diag_vblank_count();
+	if (vblankCount != 0)
+	{
+		MapleDiagState maple = maple_get_diag_state();
+		bool newVblank = vblankCount != lastVblankCount;
+		bool stateChanged = !haveProbeState || maple.dmaStarted != lastDmaStarted
+				|| maple.pendingResponses != lastPendingResponses
+				|| maple.callbackScheduled != lastCallbackScheduled;
+		if ((newVblank || stateChanged) && loggedSamples < 10000)
+			INFO_LOG(INTERPRETER, "KOFXI_STEP_PROBE cycle=%llu pc=%08x vblank=%u mdst=%u maple_pending=%u maple_scheduled=%u maple_drain_candidate=%u ordinal=%u",
+					(unsigned long long)sh4_sched_now64(), Sh4cntx.pc, vblankCount,
+					maple.dmaStarted, maple.pendingResponses, maple.callbackScheduled,
+					maple.drainCandidate(), loggedSamples++);
+		lastVblankCount = vblankCount;
+		lastDmaStarted = maple.dmaStarted;
+		lastPendingResponses = maple.pendingResponses;
+		lastCallbackScheduled = maple.callbackScheduled;
+		haveProbeState = true;
+	}
+#endif
+	return result;
 }
 
 void Sh4Interpreter::Init()
