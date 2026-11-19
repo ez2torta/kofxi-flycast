@@ -28,6 +28,8 @@
 #include "net_platform.h"
 #include <algorithm>
 
+void kofxiBenchReset(unsigned mask);
+extern bool *unprotected_pages;
 namespace ggpo
 {
 
@@ -1149,6 +1151,44 @@ static void benchDiag(BenchCtx& c, FILE* out)
 		char tag[96];
 		static const char* fm[4] = {"T4a invalidate %zu restored RAM pages only", "T4b control: no invalidation (%zu pages)", "T4c invalidate ALL RAM pages (%zu changed)", "T4d invalidate all RAM pages + bm_ResetTempCache (%zu changed)"};
 		std::snprintf(tag, sizeof tag, fm[variant], changed.size());
+		benchCompare(out, tag, K, F, ref, run);
+		benchTimes(out, tag, t1 - t0, t2 - t1, F - K);
+	}
+	// T5: exact memory + rollback-mode deserialize, then pieces of ResetCache() by mask:
+	// 1 codeBuffer.reset  2 bm_ResetCache (backend reset, fpcb reset, discard blocks)  4 smc_hotspots  8 temp cache  16 backend reset only  32 fpcb reset only
+	static const unsigned masks[] = {2};
+	for (unsigned mask : masks) {
+		for (int r = 0; r < 3; r++) std::memcpy(benchRegion(r), memCopy[r], benchRegionSize(r));
+		{
+			Deserializer dr(rbState.data(), rbState.size(), true);
+			dc_deserialize(dr);
+		}
+		kofxiBenchReset(mask);
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, K, F, run);
+		char tag[64];
+		std::snprintf(tag, sizeof tag, "T5 mask %u", mask);
+		benchCompare(out, tag, K, F, ref, run);
+	}
+	// T6: invalidate with the unprotected flag forced off first, so bm_RamWriteAccess cannot return early
+	for (int variant = 0; variant < 2; variant++) {
+		std::vector<u32> changed;
+		for (u32 o = 0; o < (u32)RAM_SIZE; o += 4096)
+			if (variant == 1 || std::memcmp(&mem_b[o], memCopy[0] + o, 4096) != 0) changed.push_back(o);
+		for (int r = 0; r < 3; r++) std::memcpy(benchRegion(r), memCopy[r], benchRegionSize(r));
+		{
+			Deserializer dr(rbState.data(), rbState.size(), true);
+			dc_deserialize(dr);
+		}
+		long long t0 = benchNs();
+		u32 wasUnprot = 0;
+		for (u32 o : changed) { if (unprotected_pages[o / 4096]) ++wasUnprot; unprotected_pages[o / 4096] = false; bm_RamWriteAccess(o); }
+		long long t1 = benchNs();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, K, F, run);
+		long long t2 = benchNs();
+		char tag[128];
+		std::snprintf(tag, sizeof tag, variant == 0 ? "T6a force-invalidate %zu restored RAM pages (%u were flagged unprotected)" : "T6b force-invalidate ALL %zu RAM pages (%u were flagged unprotected)", changed.size(), wasUnprot);
 		benchCompare(out, tag, K, F, ref, run);
 		benchTimes(out, tag, t1 - t0, t2 - t1, F - K);
 	}

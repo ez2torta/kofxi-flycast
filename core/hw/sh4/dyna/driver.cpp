@@ -85,6 +85,21 @@ void Sh4Recompiler::ResetCache()
 	clear_temp_cache(true);
 }
 
+void kofxiBenchBm(unsigned m);
+// KOFXI rollback diagnosis (temporary): applies the pieces of ResetCache() separately
+void kofxiBenchReset(unsigned mask)
+{
+	if (mask & 1) codeBuffer.reset(false);
+	if (mask & 2) bm_ResetCache();
+	if (mask & 4) smc_hotspots.clear();
+	if (mask & 8) Sh4Recompiler::Instance->clear_temp_cache(true);
+	if (mask & 16) sh4Dynarec->reset();
+	if (mask & 32) addrspace::bm_reset();
+	if (mask & 64) kofxiBenchBm(1);
+	if (mask & 128) kofxiBenchBm(2);
+	if (mask & 256) kofxiBenchBm(4);
+}
+
 void Sh4Recompiler::Run()
 {
 	getContext()->restoreHostRoundingMode();

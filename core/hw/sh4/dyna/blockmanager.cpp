@@ -324,6 +324,34 @@ void bm_UnlockPage(u32 addr, u32 size)
 		virtmem::region_unlock(&mem_b[addr], size);
 }
 
+// KOFXI rollback diagnosis (temporary): pieces of bm_ResetCache() on their own
+void kofxiBenchBm(unsigned m)
+{
+	if (m & 1)
+	{
+		for (const auto& it : blkmap)
+		{
+			RuntimeBlockInfoPtr block = it.second;
+			block->relink_data = 0;
+			block->pNextBlock = NULL;
+			block->pBranchBlock = NULL;
+			block->Relink();
+			block->Discard();
+			del_blocks.push_back(block);
+		}
+		blkmap.clear();
+		all_temp_blocks.clear();
+	}
+	if (m & 2)
+	{
+		for (size_t i = 0; i < pageCount; i++)
+			blocks_per_page[i].clear();
+		memset(unprotected_pages, 0, pageCount);
+	}
+	if (m & 4)
+		bm_Reset();
+}
+
 void bm_ResetCache()
 {
 	sh4Dynarec->reset();
