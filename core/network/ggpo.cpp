@@ -17,6 +17,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "ggpo.h"
+#include "hw/sh4/sh4_sched.h"
 #include "hw/maple/maple_cfg.h"
 #include "hw/maple/maple_devs.h"
 #include "input/gamepad_device.h"
@@ -42,16 +43,22 @@ namespace ggpo
 {
 
 bool inRollback;
+static bool auditOn;
+static u32 auditK[2];
+static bool auditPollMode;
+static const unsigned* auditP1; static const unsigned* auditP2; static size_t auditN, auditPoll;
 
 static void getLocalInput(MapleInputState inputState[4])
 {
 	if (!config::ThreadedRendering)
 		os_UpdateInputState();
 	std::lock_guard<std::mutex> lock(relPosMutex);
+	struct PollInc { ~PollInc() { if (auditPollMode) ++auditPoll; } } pollInc;
 	for (int player = 0; player < 4; player++)
 	{
 		MapleInputState& state = inputState[player];
-		state.kcode = kcode[player];
+		state.kcode = (auditOn && player < 2) ? auditK[player] : kcode[player];
+		if (auditPollMode && player < 2) { size_t ix = auditPoll; state.kcode = ix < auditN ? ~(player == 0 ? auditP1[ix] : auditP2[ix]) : 0xFFFFFFFF; }
 		state.halfAxes[PJTI_L] = lt[player];
 		state.halfAxes[PJTI_R] = rt[player];
 		state.halfAxes[PJTI_L2] = lt2[player];
@@ -1485,6 +1492,31 @@ static void benchRunInputs()
 		dc_loadstate(0);
 		Serializer sz; dc_serialize(sz); fullInit.resize(sz.size());
 		Serializer sf(fullInit.data(), fullInit.size()); dc_serialize(sf);
+	}
+	if (std::getenv("KOFXI_AUDIT"))
+	{
+		// straight run from the chosen savestate with the replay inputs; logs a few guest values per frame
+		std::fprintf(out, "audit frame dcycles polls p1hp p2hp p2vis clock78 clock7a"); std::fputc(10, out);
+		if (std::getenv("KOFXI_AUDIT_NET")) dc_loadstate(-1); else dc_loadstate(0);
+		static std::vector<unsigned> aP1, aP2; for (auto& e : c.in) { aP1.push_back(e.p1); aP2.push_back(e.p2); }
+		if (std::getenv("KOFXI_AUDIT_POLL")) { auditPollMode = true; auditP1 = aP1.data(); auditP2 = aP2.data(); auditN = aP1.size(); auditPoll = 0; }
+		auto rd = [](u32 addr) { u16 v; std::memcpy(&v, &mem_b[addr - 0x8C000000], 2); return (unsigned)v; };
+		for (int f = 0; f < N; f++)
+		{
+			{ const int sh = std::getenv("KOFXI_AUDIT_SHIFT") ? std::atoi(std::getenv("KOFXI_AUDIT_SHIFT")) : 0; const int k = f - sh;
+			  auditOn = true; auditK[0] = k >= 0 && k < (int)c.in.size() ? ~c.in[k].p1 : 0xFFFFFFFF; auditK[1] = k >= 0 && k < (int)c.in.size() ? ~c.in[k].p2 : 0xFFFFFFFF; 
+			  const char* zz = std::getenv("KOFXI_AUDIT_MODE"); if (zz) { if (!std::strcmp(zz, "zero1")) auditK[0] = 0xFFFFFFFF; else if (!std::strcmp(zz, "zero2")) auditK[1] = 0xFFFFFFFF; else if (!std::strcmp(zz, "swap")) std::swap(auditK[0], auditK[1]);
+			    else if (!std::strncmp(zz, "mirror", 6)) { auto mir = [](u32 v) { u32 l = (v & 0x40) ? 0 : 1, r = (v & 0x80) ? 0 : 1; v |= 0xC0; if (l) v &= ~0x80u; if (r) v &= ~0x40u; return v; };
+			        // active-low word: bit clear = pressed; swap left (0x40) and right (0x80)
+			        if (std::strchr(zz, '1')) auditK[0] = mir(auditK[0]); if (std::strchr(zz, '2')) auditK[1] = mir(auditK[1]); } } }
+			benchAdvanceFrame();
+			{ const char* dmp = std::getenv("KOFXI_AUDIT_DUMP"); if (dmp) { int d1 = std::atoi(dmp); const char* c2 = std::strchr(dmp, ','); int d2 = c2 ? std::atoi(c2 + 1) : -1;
+			    if (f == d1 || f == d2) { std::string nm = std::string(logp ? logp : "audit") + ".dump" + std::to_string(f); FILE* df = std::fopen(nm.c_str(), "wb"); if (df) { std::fwrite(&mem_b[0x27C000], 1, 0x2000, df); std::fclose(df); } FILE* cf = std::fopen((nm + ".code").c_str(), "wb"); if (cf) { std::fwrite(&mem_b[0x0A0000], 1, 256, cf); std::fclose(cf); } } } }
+			static long long lastCyc = 0; long long nowCyc = (long long)sh4_sched_now64(); long long dCyc = nowCyc - lastCyc; lastCyc = nowCyc;
+			std::fprintf(out, "%d %lld %zu %u %u %u %u %u", f, dCyc, auditPoll, rd(0x8C27CEA0), rd(0x8C27CEE0), rd(0x8C27CCC8), rd(0x8C27CB78), rd(0x8C27CB7A));
+			std::fputc(10, out);
+		}
+		std::fclose(out); std::_Exit(0);
 	}
 	if (std::getenv("KOFXI_ROLLBACK_PROFILE")) { benchProfile(c, out); std::fclose(out); std::_Exit(0); }
 	if (std::getenv("KOFXI_ROLLBACK_DIAG")) { benchDiag(c, out); std::fclose(out); std::_Exit(0); }
