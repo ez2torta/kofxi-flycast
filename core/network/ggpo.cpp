@@ -89,15 +89,58 @@ static void getLocalInput(MapleInputState inputState[4])
 
 //#define SYNC_TEST 1
 
-#ifdef SYNC_TEST
 #include <xxhash.h>
-#endif
+#include <deque>
+#include <fstream>
+#include <array>
+#include <cmath>
+#include "input/gamepad_device.h"
+#include "hw/sh4/sh4_mem.h"
+#include "hw/pvr/pvr_mem.h"
+#include "hw/aica/aica_if.h"
+#include "hw/sh4/modules/mmu.h"
+#include "hw/sh4/sh4_if.h"
+#include "hw/sh4/dyna/blockmanager.h"
+#include "hw/sh4/dyna/ngen.h"
 
 namespace ggpo
 {
 using namespace std::chrono;
 
 constexpr int MAX_PLAYERS = 2;
+
+// KOFXI rollback bench (temporary): time spent in save / load / resimulated frame.
+struct BenchStat {
+	double ms = 0, maxMs = 0; u64 n = 0;
+	void add(double v) { ms += v; if (v > maxMs) maxMs = v; ++n; }
+};
+static BenchStat benchSave, benchLoad, benchAdvance;
+static u64 benchBytes = 0, benchPagesRam = 0, benchPagesVram = 0, benchPagesAram = 0;
+static double benchNow() {
+	static const auto base = std::chrono::steady_clock::now();
+	return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - base).count();
+}
+static bool benchOn() {
+	static const bool on = std::getenv("KOFXI_ROLLBACK_BENCH") != nullptr;
+	return on;
+}
+
+static void benchReport() {
+	static FILE* f = nullptr;
+	if (f == nullptr) {
+		const char* path = std::getenv("KOFXI_ROLLBACK_LOG");
+		f = std::fopen(path ? path : "rollback_bench.txt", "w");
+	}
+	if (f == nullptr || benchSave.n == 0) return;
+	std::fprintf(f, "saves %llu save_avg %.3f ms save_max %.3f | loads %llu load_avg %.3f ms load_max %.3f | "
+			"resim %llu advance_avg %.3f ms max %.3f | state_bytes_avg %.0f | pages/frame ram %.1f vram %.1f aram %.1f\n",
+			(unsigned long long)benchSave.n, benchSave.ms / benchSave.n, benchSave.maxMs,
+			(unsigned long long)benchLoad.n, benchLoad.n ? benchLoad.ms / benchLoad.n : 0.0, benchLoad.maxMs,
+			(unsigned long long)benchAdvance.n, benchAdvance.n ? benchAdvance.ms / benchAdvance.n : 0.0, benchAdvance.maxMs,
+			(double)benchBytes / benchSave.n, (double)benchPagesRam / benchSave.n,
+			(double)benchPagesVram / benchSave.n, (double)benchPagesAram / benchSave.n);
+	std::fflush(f);
+}
 constexpr int SERVER_PORT = 19713;
 
 constexpr u32 BTN_TRIGGER_LEFT	= DC_BTN_BITMAPPED_LAST << 1;
@@ -271,7 +314,9 @@ static bool advance_frame(int)
 	rend_enable_renderer(false);
 	inRollback = true;
 
+	double t0 = benchNow();
 	emu.run();
+	benchAdvance.add(benchNow() - t0);
 	ggpo_advance_frame(ggpoSession);
 
 	settings.aica.muteAudio = false;
@@ -289,7 +334,15 @@ static bool advance_frame(int)
  * should make the current game state match the state contained in the
  * buffer.
  */
+static bool load_game_state_impl(unsigned char *buffer, int len);
 static bool load_game_state(unsigned char *buffer, int len)
+{
+	double t0 = benchNow();
+	bool r = load_game_state_impl(buffer, len);
+	benchLoad.add(benchNow() - t0);
+	return r;
+}
+static bool load_game_state_impl(unsigned char *buffer, int len)
 {
 	INFO_LOG(NETWORK, "load_game_state");
 
@@ -331,7 +384,23 @@ static bool load_game_state(unsigned char *buffer, int len)
  * length into the *len parameter.  Optionally, the client can compute
  * a checksum of the data and store it in the *checksum argument.
  */
+static bool save_game_state_impl(unsigned char **buffer, int *len, int *checksum, int frame);
 static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int frame)
+{
+	double t0 = benchNow();
+	bool r = save_game_state_impl(buffer, len, checksum, frame);
+	benchSave.add(benchNow() - t0);
+	if (r) {
+		benchBytes += *len;
+		if (frame > 0 && deltaStates.count(frame - 1)) {
+			const MemPages& d = deltaStates[frame - 1];
+			benchPagesRam += d.ram.size(); benchPagesVram += d.vram.size(); benchPagesAram += d.aram.size();
+		}
+	}
+	if (benchSave.n % 300 == 0) benchReport();
+	return r;
+}
+static bool save_game_state_impl(unsigned char **buffer, int *len, int *checksum, int frame)
 {
 	verify(!emu.getSh4Executor()->IsCpuRunning());
 	lastSavedFrame = frame;
@@ -355,7 +424,7 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 		return false;
 	}
 #ifdef SYNC_TEST
-	*checksum = XXH3_64bits(*buffer, usedSize);
+	*checksum = XXH3_64bits(*buffer, *len);
 #endif
 	memwatch::protect();
 	if (frame > 0)
@@ -383,13 +452,13 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 			for (const auto& pair : memPages.ram)
 			{
 				verify(savedPages.ram.count(pair.first) == 1);
-				verify(memcmp(&pair.second[0], &savedPages.ram.find(pair.first)->second[0], PAGE_SIZE) == 0);
+				verify(memcmp(&pair.second.data[0], &savedPages.ram.find(pair.first)->second.data[0], PAGE_SIZE) == 0);
 			}
 			verify(memPages.vram.size() == savedPages.vram.size());
 			for (const auto& pair : memPages.vram)
 			{
 				verify(savedPages.vram.count(pair.first) == 1);
-				verify(memcmp(&pair.second[0], &savedPages.vram.find(pair.first)->second[0], PAGE_SIZE) == 0);
+				verify(memcmp(&pair.second.data[0], &savedPages.vram.find(pair.first)->second.data[0], PAGE_SIZE) == 0);
 			}
 			//verify(memPages.aram.size() == savedPages.aram.size());
 			if (memPages.aram.size() != savedPages.aram.size())
@@ -400,7 +469,7 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 			for (const auto& pair : memPages.aram)
 			{
 				verify(savedPages.aram.count(pair.first) == 1);
-				verify(memcmp(&pair.second[0], &savedPages.aram.find(pair.first)->second[0], PAGE_SIZE) == 0);
+				verify(memcmp(&pair.second.data[0], &savedPages.aram.find(pair.first)->second.data[0], PAGE_SIZE) == 0);
 			}
 		}
 #endif
@@ -695,8 +764,489 @@ void getInput(MapleInputState inputState[4])
 	}
 }
 
+// ---- KOFXI rollback bench (temporary): GGPO's save / load / resimulate cycle without a network ----
+struct BenchSaved { unsigned char *buf = nullptr; int len = 0; int frame = 0; };
+static std::deque<BenchSaved> benchRing;
+static int benchFrameNo = 0, benchRollbacks = 0, benchMismatch = 0, benchRamMismatch = 0;
+static double benchRollbackMs = 0, benchRollbackMaxMs = 0;
+
+static u64 benchMemHash() {
+	u64 h = XXH3_64bits(&mem_b[0], RAM_SIZE);
+	h ^= XXH3_64bits(&vram[0], VRAM_SIZE) * 3;
+	h ^= XXH3_64bits(&aica::aica_ram[0], ARAM_SIZE) * 5;
+	return h;
+}
+
+static void benchAdvanceFrame() {
+	settings.aica.muteAudio = true;
+	rend_enable_renderer(false);
+	inRollback = true;
+	auto a0 = std::chrono::steady_clock::now();
+	emu.run();
+	auto a1 = std::chrono::steady_clock::now();
+	benchAdvance.add((double)std::chrono::duration_cast<std::chrono::nanoseconds>(a1 - a0).count() / 1e6);
+	settings.aica.muteAudio = false;
+	rend_enable_renderer(true);
+	inRollback = false;
+	_endOfFrame = false;
+}
+
+static void bstep(const char* m, int f) {
+	static FILE* q = std::fopen("bench_progress.txt", "w");
+	if (q) { std::fprintf(q, "%d %s\n", f, m); std::fflush(q); }
+}
+
+static bool benchFrame() {
+	static const int K = [] { int k = std::atoi(std::getenv("KOFXI_ROLLBACK_BENCH")); return k > 0 ? k : 8; }();
+	int f = benchFrameNo++;
+	bstep("begin", f);
+	BenchSaved s; s.frame = f; int chk = 0;
+	if (!save_game_state(&s.buf, &s.len, &chk, f))
+		return false;
+	bstep("saved", f);
+	benchRing.push_back(s);
+	while ((int)benchRing.size() > K + 1) { free_buffer(benchRing.front().buf); benchRing.pop_front(); }
+	if (f >= K && f % 120 == 0 && (int)benchRing.size() == K + 1)
+	{
+		const std::vector<unsigned char> before(benchRing.back().buf, benchRing.back().buf + benchRing.back().len);
+		const u64 memBefore = benchMemHash();
+		bstep("before-load", f);
+		double t0 = benchNow();
+		load_game_state(benchRing.front().buf, benchRing.front().len);
+		bstep("loaded", f);
+		for (int i = 1; i <= K; i++)
+		{
+			bstep("advance", i);
+			benchAdvanceFrame();
+			bstep("advanced", i);
+			BenchSaved n; n.frame = f - K + i; int c2 = 0;
+			if (!save_game_state(&n.buf, &n.len, &c2, n.frame))
+				return false;
+			free_buffer(benchRing[i].buf);
+			benchRing[i] = n;
+		}
+		double dt = benchNow() - t0;
+		benchRollbackMs += dt; if (dt > benchRollbackMaxMs) benchRollbackMaxMs = dt;
+		++benchRollbacks;
+		const BenchSaved& after = benchRing.back();
+		bool same = (int)before.size() == after.len && std::memcmp(before.data(), after.buf, after.len) == 0;
+		bool ramSame = benchMemHash() == memBefore;
+		if (!same) ++benchMismatch;
+		if (!ramSame) ++benchRamMismatch;
+		benchReport();
+		static FILE* f2 = std::fopen((std::string(std::getenv("KOFXI_ROLLBACK_LOG") ? std::getenv("KOFXI_ROLLBACK_LOG") : "rollback_bench.txt") + ".rollbacks").c_str(), "w");
+		if (f2) {
+			std::fprintf(f2, "frame %d K=%d rollback+resim %.2f ms (total %d, avg %.2f, max %.2f) state_same=%d mem_same=%d mismatches state=%d mem=%d\n",
+				f, K, dt, benchRollbacks, benchRollbackMs / benchRollbacks, benchRollbackMaxMs, same, ramSame, benchMismatch, benchRamMismatch);
+			std::fflush(f2);
+		}
+	}
+	return true;
+}
+
+// Bench B: no memwatch. Per-frame rollback-mode save cost, dirty pages per frame (shadow copy) and a
+// full save / run K / restore / run K determinism check every 120 frames.
+static u8 *shadowRam = nullptr, *shadowVram = nullptr, *shadowAram = nullptr;
+static double bSaveMs = 0, bSaveMax = 0, bCopyMs = 0; static u64 bSaveN = 0, bBytes = 0, bPages[3] = {0, 0, 0};
+static double bFullSave = 0, bFullLoad = 0, bFrameMs = 0; static u64 bFrames = 0;
+static int bTests = 0, bMismatchState = 0, bMismatchMem = 0;
+static size_t bFullSize = 0;
+
+static u64 benchStateHash() {
+	static std::vector<unsigned char> tmp(24 * 1024 * 1024);
+	Serializer ser(tmp.data(), tmp.size(), true);
+	dc_serialize(ser);
+	return XXH3_64bits(tmp.data(), ser.size());
+}
+static u32 dirtyPages(const u8 *cur, u8 *shadow, u32 size) {
+	u32 n = 0;
+	for (u32 o = 0; o < size; o += PAGE_SIZE)
+		if (std::memcmp(cur + o, shadow + o, PAGE_SIZE) != 0) { ++n; std::memcpy(shadow + o, cur + o, PAGE_SIZE); }
+	return n;
+}
+static void benchLine(FILE* f, const char* label) { std::fprintf(f, "%s", label); std::fputc(10, f); std::fflush(f); }
+
+static bool benchFrame2() {
+	static const int K = [] { int k = std::atoi(std::getenv("KOFXI_ROLLBACK_BENCH")); return k > 0 ? k : 8; }();
+	static FILE* out = std::fopen((std::string(std::getenv("KOFXI_ROLLBACK_LOG") ? std::getenv("KOFXI_ROLLBACK_LOG") : "rollback_bench.txt")).c_str(), "w");
+	static std::vector<unsigned char> buf(24 * 1024 * 1024);
+	static std::vector<unsigned char> full;
+	if (!shadowRam) {
+		shadowRam = (u8*)calloc(1, RAM_SIZE); shadowVram = (u8*)calloc(1, VRAM_SIZE); shadowAram = (u8*)calloc(1, ARAM_SIZE);
+	}
+	int f = benchFrameNo++;
+	// 1. what GGPO saves every frame: non-memory state ...
+	double t0 = benchNow();
+	Serializer ser(buf.data(), buf.size(), true);
+	dc_serialize(ser);
+	double dt = benchNow() - t0;
+	bSaveMs += dt; if (dt > bSaveMax) bSaveMax = dt; ++bSaveN; bBytes += ser.size();
+	// 2. ... plus the pages that changed (memwatch would copy exactly these)
+	u32 pr = dirtyPages(&mem_b[0], shadowRam, RAM_SIZE), pv = dirtyPages(&vram[0], shadowVram, VRAM_SIZE),
+		pa = dirtyPages(&aica::aica_ram[0], shadowAram, ARAM_SIZE);
+	bPages[0] += pr; bPages[1] += pv; bPages[2] += pa;
+	{
+		static std::vector<u8> sink(4096 * 4096);
+		double c0 = benchNow();
+		u32 total = std::min<u32>(pr + pv + pa, 4096);
+		for (u32 i = 0; i < total; i++) std::memcpy(&sink[i * 4096], &mem_b[(i * 4096) % RAM_SIZE], 4096);
+		bCopyMs += benchNow() - c0;
+	}
+	if (f % 10 == 0 && out) { char l2[200]; std::snprintf(l2, sizeof l2, "progress f=%d save %.2f ms bytes %zu dirty ram %u vram %u aram %u", f, dt, (size_t)ser.size(), pr, pv, pa); benchLine(out, l2); }
+	if (f > 0 && f % 120 == 0 && f > K)
+	{
+		// 3. determinism: full state, run K, hash, restore, run K, hash
+		Serializer sz;
+		dc_serialize(sz);
+		full.resize(sz.size());
+		double s0 = benchNow();
+		Serializer sf(full.data(), full.size());
+		dc_serialize(sf);
+		bFullSave += benchNow() - s0; bFullSize = sz.size();
+		for (int i = 0; i < K; i++) { double a = benchNow(); benchAdvanceFrame(); bFrameMs += benchNow() - a; ++bFrames; }
+		const u64 h1 = benchStateHash(), m1 = benchMemHash();
+		double l0 = benchNow();
+		{
+			Deserializer dz(full.data(), full.size());
+			emu.loadstate(dz);
+		}
+		bFullLoad += benchNow() - l0;
+		for (int i = 0; i < K; i++) { double a = benchNow(); benchAdvanceFrame(); bFrameMs += benchNow() - a; ++bFrames; }
+		const u64 h2 = benchStateHash(), m2 = benchMemHash();
+		++bTests; if (h1 != h2) ++bMismatchState; if (m1 != m2) ++bMismatchMem;
+		memset(shadowRam, 0, RAM_SIZE); memset(shadowVram, 0, VRAM_SIZE); memset(shadowAram, 0, ARAM_SIZE);
+		char line[640];
+		std::snprintf(line, sizeof line,
+			"frame %d | per-frame (rollback-mode save): %.3f ms avg %.3f max %.3f, %.0f B/frame | dirty pages/frame ram %.1f vram %.1f aram %.1f, copy of those %.3f ms/frame | "
+			"full save %.2f ms (%zu B) full load %.2f ms | resim frame (no render, no audio) %.2f ms avg (%llu frames) max %.2f | K=%d tests %d state_mismatch %d mem_mismatch %d",
+			f, dt, bSaveMs / bSaveN, bSaveMax, (double)bBytes / bSaveN, (double)bPages[0] / bSaveN, (double)bPages[1] / bSaveN,
+			(double)bPages[2] / bSaveN, bCopyMs / bSaveN, bFullSave / bTests, bFullSize, bFullLoad / bTests,
+			benchAdvance.n ? benchAdvance.ms / benchAdvance.n : 0.0, (unsigned long long)benchAdvance.n, benchAdvance.maxMs, K, bTests, bMismatchState, bMismatchMem);
+		if (out) benchLine(out, line);
+	}
+	return true;
+}
+
+// ---- Bench C: two-sided inputs (Fightcade replay), GGPO-style prediction and rollback ----
+// Pass A: straight run with the true inputs (reference hashes). Pass B(L): the same run as seen by P1 when
+// P2's input arrives L frames late and is predicted as "same as the last confirmed one". On a wrong
+// prediction: restore the state at the start of the frame, re-run to the present with corrected inputs.
+// Memory is restored page by page from per-frame deltas (what memwatch would give), the rest through
+// dc_deserialize in rollback mode. Renderer and audio are off for every frame: this is emulation-thread cost.
+struct BenchInput { u32 p1 = 0, p2 = 0; };
+struct BenchDelta { struct Page { u8 region; u32 index; std::array<u8, 4096> old; }; std::vector<Page> pages; };
+
+static u8* benchRegion(int r) { return r == 0 ? &mem_b[0] : r == 1 ? &vram[0] : &aica::aica_ram[0]; }
+static u32 benchRegionSize(int r) { return r == 0 ? (u32)RAM_SIZE : r == 1 ? (u32)VRAM_SIZE : (u32)ARAM_SIZE; }
+
+struct BenchCtx
+{
+	std::vector<BenchInput> in;
+	u8* shadow[3] = {};
+	static constexpr int RING = 64;
+	std::vector<std::vector<unsigned char>> state{RING};
+	std::vector<BenchDelta> delta{RING};
+	std::vector<u32> used2;
+	std::vector<u64> hashA;
+	void resetShadow() {
+		for (int r = 0; r < 3; r++) {
+			if (!shadow[r]) shadow[r] = (u8*)malloc(benchRegionSize(r));
+			std::memcpy(shadow[r], benchRegion(r), benchRegionSize(r));
+		}
+	}
+};
+
+static long long benchNs() {
+	static const auto base = std::chrono::steady_clock::now();
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - base).count();
+}
+
+// Executes frame f with the given inputs, saving its start state and recording the memory deltas.
+static long long benchExec(BenchCtx& c, int f, u32 p1, u32 p2)
+{
+	long long t0 = benchNs();
+	auto& st = c.state[f % BenchCtx::RING];
+	st.resize(2 * 1024 * 1024);
+	Serializer ser(st.data(), st.size(), true);
+	dc_serialize(ser);
+	st.resize(ser.size());
+	long long t1 = benchNs();
+	kcode[0] = ~p1; kcode[1] = ~p2;
+	benchAdvanceFrame();
+	long long t2 = benchNs();
+	// dirty pages: the scan is not timed (memwatch gets them from page faults); the copy is
+	BenchDelta& d = c.delta[f % BenchCtx::RING];
+	d.pages.clear();
+	std::vector<std::pair<u8, u32>> dirty;
+	for (int r = 0; r < 3; r++) {
+		const u8* cur = benchRegion(r); const u32 size = benchRegionSize(r);
+		for (u32 o = 0; o < size; o += 4096)
+			if (std::memcmp(cur + o, c.shadow[r] + o, 4096) != 0) dirty.push_back({(u8)r, o / 4096});
+	}
+	long long t3 = benchNs();
+	d.pages.resize(dirty.size());
+	for (size_t i = 0; i < dirty.size(); i++) {
+		auto& pg = d.pages[i]; pg.region = dirty[i].first; pg.index = dirty[i].second;
+		std::memcpy(pg.old.data(), c.shadow[pg.region] + pg.index * 4096, 4096);
+		std::memcpy(c.shadow[pg.region] + pg.index * 4096, benchRegion(pg.region) + pg.index * 4096, 4096);
+	}
+	long long t4 = benchNs();
+	return (t1 - t0) + (t2 - t1) + (t4 - t3);
+}
+
+// Restores the state at the start of frame `to`, being at the start of frame `from` (> to).
+static long long benchRestore(BenchCtx& c, int from, int to)
+{
+	long long t0 = benchNs();
+	for (int g = from - 1; g >= to; g--)
+		for (auto& pg : c.delta[g % BenchCtx::RING].pages) {
+			std::memcpy(benchRegion(pg.region) + pg.index * 4096, pg.old.data(), 4096);
+			std::memcpy(c.shadow[pg.region] + pg.index * 4096, pg.old.data(), 4096);
+		}
+	auto& st = c.state[to % BenchCtx::RING];
+	Deserializer deser(st.data(), st.size(), true);
+	dc_deserialize(deser);
+	return benchNs() - t0;
+}
+
+__declspec(noinline) static void benchPercentiles(std::vector<long long> v, FILE* out, const char* name)
+{
+	if (v.empty()) return;
+	std::sort(v.begin(), v.end());
+	auto q = [&](double p) { return (double)v[std::min(v.size() - 1, (size_t)(p * v.size()))] / 1e6; };
+	u64 over = 0, over2 = 0; double sum = 0;
+	for (long long n : v) { double x = (double)n / 1e6; sum += x; if (x > 16.67) ++over; if (x > 33.3) ++over2; }
+	std::fprintf(out, "  %s: mean %.2f p50 %.2f p90 %.2f p95 %.2f p99 %.2f max %.2f ms | >16.7 ms: %.1f%% >33 ms: %.1f%% (n=%zu)", name, sum / v.size(), q(.5), q(.9), q(.95), q(.99), (double)v.back() / 1e6,
+			100.0 * over / v.size(), 100.0 * over2 / v.size(), v.size());
+	std::fputc(10, out);
+}
+
+// ---- Diagnosis: why is the restore not exact? Ladder T0..T3, per-page hashes of RAM / VRAM / ARAM ----
+static std::vector<u64> benchPageHashes() {
+	std::vector<u64> v;
+	for (int r = 0; r < 3; r++) {
+		const u8* q = benchRegion(r); const u32 n = benchRegionSize(r) / 4096;
+		for (u32 i = 0; i < n; i++) v.push_back(XXH3_64bits(q + i * 4096, 4096));
+	}
+	return v;
+}
+__declspec(noinline) static void benchDiffReport(FILE* out, const char* tag, int f, const std::vector<u64>& a, const std::vector<u64>& b) {
+	if (a == b) return;
+	u32 cnt[3] = {0, 0, 0}; std::string first;
+	size_t k = 0;
+	for (int r = 0; r < 3; r++) {
+		const u32 n = benchRegionSize(r) / 4096;
+		for (u32 i = 0; i < n; i++, k++)
+			if (a[k] != b[k]) { cnt[r]++; if (first.size() < 200) { char t[48]; std::snprintf(t, sizeof t, " %s+0x%x", r == 0 ? "RAM" : r == 1 ? "VRAM" : "ARAM", i * 4096); first += t; } }
+	}
+	std::fprintf(out, "  [%s] frame %d differs: pages ram %u vram %u aram %u; first:%s", tag, f, cnt[0], cnt[1], cnt[2], first.c_str());
+	std::fputc(10, out);
+}
+// Runs frames [from, to) with the replay inputs; returns per-frame page hashes.
+static void benchRunFrames(BenchCtx& c, int from, int to, std::vector<std::vector<u64>>& hashes) {
+	for (int f = from; f < to; f++) {
+		kcode[0] = ~c.in[f].p1; kcode[1] = ~c.in[f].p2;
+		benchAdvanceFrame();
+		hashes[f] = benchPageHashes();
+	}
+}
+// Compares a run against the reference; returns first differing frame or -1
+static int benchCompare(FILE* out, const char* tag, int from, int to, const std::vector<std::vector<u64>>& ref, const std::vector<std::vector<u64>>& run) {
+	int firstBad = -1, bad = 0;
+	for (int f = from; f < to; f++)
+		if (ref[f] != run[f]) { if (firstBad < 0) { firstBad = f; benchDiffReport(out, tag, f, ref[f], run[f]); } ++bad; }
+	std::fprintf(out, "%s: %d of %d frames differ%s", tag, bad, to - from, firstBad >= 0 ? "" : " (all identical)");
+	std::fputc(10, out); std::fflush(out);
+	return firstBad;
+}
+__declspec(noinline) static void benchTimes(FILE* out, const char* tag, long long restoreNs, long long runNs, int frames) {
+	std::fprintf(out, "  [%s] restore %.2f ms, then %d frames in %.1f ms (%.2f ms/frame, first included)", tag, (double)restoreNs / 1e6, frames, (double)runNs / 1e6, (double)runNs / 1e6 / frames);
+	std::fputc(10, out);
+}
+static void benchDiag(BenchCtx& c, FILE* out)
+{
+	const int K = 60, F = 100;
+	std::vector<std::vector<u64>> ref(F), r2(F), run(F);
+	std::vector<unsigned char> fullState, rbState;
+	u8* memCopy[3];
+	for (int r = 0; r < 3; r++) memCopy[r] = (u8*)malloc(benchRegionSize(r));
+	// R1: reference, saving states and memory at the start of frame K
+	dc_loadstate(0);
+	benchRunFrames(c, 0, K, ref);
+	{
+		Serializer sz; dc_serialize(sz); fullState.resize(sz.size());
+		Serializer sf(fullState.data(), fullState.size()); dc_serialize(sf);
+		rbState.resize(4 * 1024 * 1024);
+		Serializer sr(rbState.data(), rbState.size(), true); dc_serialize(sr); rbState.resize(sr.size());
+		for (int r = 0; r < 3; r++) std::memcpy(memCopy[r], benchRegion(r), benchRegionSize(r));
+	}
+	benchRunFrames(c, K, F, ref);
+	std::fprintf(out, "DIAG state sizes: full %zu, rollback-mode %zu bytes", fullState.size(), rbState.size());
+	std::fputc(10, out);
+	// T0: straight run again from the same savestate
+	dc_loadstate(0);
+	benchRunFrames(c, 0, F, r2);
+	benchCompare(out, "T0 straight run twice (determinism of the emulation itself)", 0, F, ref, r2);
+	// T1: full-state restore (emu.loadstate: flushes dynarec, mmu)
+	{
+		Deserializer dz(fullState.data(), fullState.size());
+		emu.loadstate(dz);
+	}
+	benchRunFrames(c, K, F, run);
+	benchCompare(out, "T1 full state via emu.loadstate", K, F, ref, run);
+	// T2: rollback-mode deserialize + exact memory copy (no dynarec flush)
+	for (int r = 0; r < 3; r++) std::memcpy(benchRegion(r), memCopy[r], benchRegionSize(r));
+	{
+		Deserializer dr(rbState.data(), rbState.size(), true);
+		dc_deserialize(dr);
+	}
+	for (auto& v : run) v.clear();
+	benchRunFrames(c, K, F, run);
+	benchCompare(out, "T2 rollback-mode dc_deserialize + exact memory (what GGPO does, no dynarec reset)", K, F, ref, run);
+	// T3a..d: rollback-mode deserialize + exact memory + each piece of the reset on its own
+	static const char* names[4] = {"T3a bm_Reset only", "T3b ResetCache only", "T3c mmu_flush_table+mmu_set_state only", "T3d bm_Reset + ResetCache (no mmu)"};
+	for (int v = 0; v < 4; v++) {
+		for (int r = 0; r < 3; r++) std::memcpy(benchRegion(r), memCopy[r], benchRegionSize(r));
+		long long t0 = benchNs();
+		if (v == 0 || v == 3) bm_Reset();
+		if (v == 2) mmu_flush_table();
+		{
+			Deserializer dr(rbState.data(), rbState.size(), true);
+			dc_deserialize(dr);
+		}
+		if (v == 2) mmu_set_state();
+		if (v == 1 || v == 3) emu.getSh4Executor()->ResetCache();
+		long long t1 = benchNs();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, K, F, run);
+		long long t2 = benchNs();
+		benchCompare(out, names[v], K, F, ref, run);
+		benchTimes(out, names[v], t1 - t0, t2 - t1, F - K);
+	}
+	// T4: exact memory + rollback-mode deserialize, and only the blocks of RAM pages that changed are invalidated
+	for (int variant = 0; variant < 4; variant++) {
+		// make the current state differ: the run above left RAM at frame F, memCopy is frame K
+		std::vector<u32> changed;
+		for (u32 o = 0; o < (u32)RAM_SIZE; o += 4096)
+			if (std::memcmp(&mem_b[o], memCopy[0] + o, 4096) != 0) changed.push_back(o);
+		for (int r = 0; r < 3; r++) std::memcpy(benchRegion(r), memCopy[r], benchRegionSize(r));
+		long long t0 = benchNs();
+		{
+			Deserializer dr(rbState.data(), rbState.size(), true);
+			dc_deserialize(dr);
+		}
+		// variant 0: invalidate the restored pages; variant 1: nothing (control, same pages restored again)
+		if (variant == 0)
+			for (u32 o : changed) bm_RamWriteAccess(o);
+		if (variant >= 2)
+			for (u32 o = 0; o < (u32)RAM_SIZE; o += 4096) bm_RamWriteAccess(o);
+		if (variant == 3)
+			bm_ResetTempCache(true);
+		long long t1 = benchNs();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, K, F, run);
+		long long t2 = benchNs();
+		char tag[96];
+		static const char* fm[4] = {"T4a invalidate %zu restored RAM pages only", "T4b control: no invalidation (%zu pages)", "T4c invalidate ALL RAM pages (%zu changed)", "T4d invalidate all RAM pages + bm_ResetTempCache (%zu changed)"};
+		std::snprintf(tag, sizeof tag, fm[variant], changed.size());
+		benchCompare(out, tag, K, F, ref, run);
+		benchTimes(out, tag, t1 - t0, t2 - t1, F - K);
+	}
+	std::fprintf(out, "DIAG done"); std::fputc(10, out); std::fflush(out);
+}
+
+__declspec(noinline) static void benchHeader(FILE* out, int pass, int L, int N, long long wallNs, long long rollbacks, long long resim, long long ok, long long bad)
+{
+	std::fprintf(out, "wall for pass: %.1f ms (%.3f ms per frame, includes hashing)", (double)wallNs / 1e6, (double)wallNs / 1e6 / N);
+	std::fputc(10, out);
+	if (pass < 0) std::fprintf(out, "pass A (reference, no rollback):");
+	else std::fprintf(out, "pass B L=%d frames (%.0f ms): rollbacks %lld (%.1f%% of frames), resimulated frames %lld (%.2f per frame), determinism checks ok %lld bad %lld", L, L * 16.67,
+			rollbacks, 100.0 * rollbacks / N, resim, (double)resim / N, ok, bad);
+	std::fputc(10, out);
+}
+
+static void benchRunInputs()
+{
+	const char* csv = std::getenv("KOFXI_ROLLBACK_INPUTS");
+	const char* logp = std::getenv("KOFXI_ROLLBACK_LOG");
+	FILE* out = std::fopen(logp ? logp : "rollback_inputs.txt", "w");
+	if (!out) return;
+	BenchCtx c;
+	{
+		std::ifstream f(csv); std::string line; std::getline(f, line);
+		while (std::getline(f, line)) {
+			unsigned a = 0, b = 0, fr = 0;
+			if (std::sscanf(line.c_str(), "%u,%u,%u", &fr, &a, &b) == 3) { BenchInput i; i.p1 = a; i.p2 = b; c.in.push_back(i); }
+		}
+	}
+	const int N = std::min<int>((int)c.in.size(), std::getenv("KOFXI_ROLLBACK_FRAMES") ? std::atoi(std::getenv("KOFXI_ROLLBACK_FRAMES")) : 3000);
+	const int WARM = 240;
+	std::vector<int> lats;
+	{ std::string s2 = std::getenv("KOFXI_ROLLBACK_LAT") ? std::getenv("KOFXI_ROLLBACK_LAT") : "2,4,8,15,30"; size_t p = 0;
+	  while (p < s2.size()) { size_t e = s2.find(',', p); if (e == std::string::npos) e = s2.size(); lats.push_back(std::atoi(s2.substr(p, e - p).c_str())); p = e + 1; } }
+	std::fprintf(out, "inputs %zu frames, running %d (warm-up %d excluded); passes: A (no rollback) then B(L) for L in the list", c.in.size(), N, WARM);
+	std::fputc(10, out); std::fflush(out);
+	c.hashA.assign(N, 0);
+	if (std::getenv("KOFXI_ROLLBACK_DIAG")) { benchDiag(c, out); std::fclose(out); std::_Exit(0); }
+	for (int pass = -1; pass < (int)lats.size(); pass++)
+	{
+		const int L = pass < 0 ? 0 : lats[pass];
+		dc_loadstate(0);
+		c.resetShadow();
+		const long long passStart = benchNs();
+		c.used2.assign(N + 1, 0);
+		std::vector<long long> perFrame, execOnly;
+		u64 rollbacks = 0, resim = 0, checksOk = 0, checksBad = 0;
+		for (int f = 0; f < N; f++)
+		{
+			long long T = 0;
+			const int cidx = f - L;
+			if (pass >= 0 && L > 0 && cidx >= 0 && c.used2[cidx] != c.in[cidx].p2)
+			{
+				++rollbacks; resim += L;
+				T += benchRestore(c, f, cidx);
+				c.used2[cidx] = c.in[cidx].p2;
+				for (int g = cidx; g < f; g++)
+				{
+					if (g > cidx) c.used2[g] = c.in[cidx].p2;	// prediction: the last confirmed input
+					T += benchExec(c, g, c.in[g].p1, c.used2[g]);
+					if (g == cidx) {
+						if (benchMemHash() == c.hashA[g]) ++checksOk; else ++checksBad;
+					}
+				}
+			}
+			if (pass < 0 || L == 0) c.used2[f] = c.in[f].p2;
+			else c.used2[f] = cidx >= 0 ? c.in[cidx].p2 : 0;
+			long long e = benchExec(c, f, c.in[f].p1, c.used2[f]);
+			T += e;
+			if (pass < 0) c.hashA[f] = benchMemHash();
+			if (f >= WARM) { perFrame.push_back(T); execOnly.push_back(e); }
+		}
+		benchHeader(out, pass, L, N, benchNs() - passStart, (long long)rollbacks, (long long)resim, (long long)checksOk, (long long)checksBad);
+		benchPercentiles(perFrame, out, "emulation thread per frame (incl. rollback)");
+		benchPercentiles(execOnly, out, "frame alone (save + execute + delta copy)");
+		std::fflush(out);
+	}
+	std::fprintf(out, "done"); std::fputc(10, out); std::fclose(out);
+	std::_Exit(0);
+}
+
 bool nextFrame()
 {
+	if (benchOn() && ggpoSession == nullptr)
+	{
+		if (!_endOfFrame)
+			return false;
+		_endOfFrame = false;
+		if (inRollback)
+			return true;
+		if (std::getenv("KOFXI_ROLLBACK_INPUTS"))
+			benchRunInputs();
+		bool ok = std::getenv("KOFXI_ROLLBACK_MEMWATCH") ? benchFrame() : benchFrame2();
+		if (ok)
+			emu.getSh4Executor()->Start();
+		return ok;
+	}
 	if (!_endOfFrame)
 		return false;
 	_endOfFrame = false;
@@ -806,7 +1356,7 @@ bool nextFrame()
 
 bool active()
 {
-	return ggpoSession != nullptr;
+	return ggpoSession != nullptr || benchOn();
 }
 
 std::future<bool> startNetwork()
