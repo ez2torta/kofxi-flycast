@@ -597,6 +597,9 @@ static void gui_display_commands()
 			if (IconButton(ICON_FA_MASK, T("Cheats"), ScaledVec2(buttonWidth, 50)).realize() && !settings.network.online)
 				gui_setState(GuiState::Cheats);
 		}
+		// KOF XI training options
+		if (IconButton(ICON_FA_BOLT, "KOF XI", ScaledVec2(buttonWidth, 50)).realize())
+			gui_setState(GuiState::KofxiCheats);
 		// Achievements
 		{
 			DisabledScope _{!achievements::isActive()};
@@ -1388,6 +1391,9 @@ void gui_display_ui()
 		break;
 	case GuiState::Cheats:
 		gui_cheats();
+		break;
+	case GuiState::KofxiCheats:
+		gui_kofxi_cheats();
 		break;
 	case GuiState::Achievements:
 #ifdef USE_RACHIEVEMENTS

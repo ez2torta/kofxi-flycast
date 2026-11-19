@@ -34,6 +34,7 @@ void gui_term();
 void gui_cancel_load();
 void gui_refresh_files();
 void gui_cheats();
+void gui_kofxi_cheats();
 void gui_keyboard_input(u32 wc);
 void gui_keyboard_inputUTF8(const std::string& s);
 void gui_keyboard_key(u8 keyCode, bool pressed);
@@ -69,6 +70,7 @@ enum class GuiState {
 	Loading,
 	NetworkStart,
 	Cheats,
+	KofxiCheats,
 	Achievements,
 };
 extern GuiState gui_state;

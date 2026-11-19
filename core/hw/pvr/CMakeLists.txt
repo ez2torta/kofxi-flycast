@@ -13,6 +13,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         Renderer_if.cpp
         Renderer_if.h
         spg.cpp
+        ../../kofxi/kofxi_cheats.cpp
         spg.h
         ta_const_df.h
         ta.cpp

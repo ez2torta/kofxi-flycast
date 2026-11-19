@@ -33,6 +33,7 @@ int vblank_schid;
 
 static std::array<double, 4> real_times;
 static std::array<u64, 4> cpu_cycles;
+void kofxi_cheats_vblank();  // core/kofxi/kofxi_cheats.cpp
 static u32 cpu_time_idx;
 bool SH4FastEnough;
 u32 fskip;
@@ -188,6 +189,7 @@ static int spg_line_sched(int tag, int cycles, int jitter, void *arg)
 #ifdef TEST_AUTOMATION
 			replay_input();
 #endif
+			kofxi_cheats_vblank();
 
 #if !defined(NDEBUG) || defined(DEBUGFAST)
 			vblk_cnt++;

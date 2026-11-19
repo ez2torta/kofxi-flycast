@@ -12,6 +12,7 @@ if(NOT LIBRETRO)
             vgamepad.h
             gui_chat.h
             gui_cheats.cpp
+            gui_kofxi.cpp
             gui_util.cpp
             gui_util.h
             mainui.cpp
