@@ -324,6 +324,42 @@ void bm_UnlockPage(u32 addr, u32 size)
 		virtmem::region_unlock(&mem_b[addr], size);
 }
 
+// KOFXI rollback diagnosis (temporary): snapshot of the dynarec bookkeeping at the start of a frame
+static std::set<void*> kofxiSnapBlocks;
+static std::vector<char> kofxiSnapUnprot;
+void kofxiBenchSnap()
+{
+	kofxiSnapBlocks.clear();
+	for (const auto& it : blkmap)
+		kofxiSnapBlocks.insert(it.first);
+	kofxiSnapUnprot.assign(unprotected_pages, unprotected_pages + pageCount);
+}
+// mode bit 1: discard the blocks compiled after the snapshot; bit 2: restore the unprotected bitmap;
+// bit 4: make the page locks agree with the bitmap
+void kofxiBenchRestoreProt(unsigned mode)
+{
+	if (mode & 1)
+	{
+		std::vector<RuntimeBlockInfo*> stale;
+		for (const auto& it : blkmap)
+			if (kofxiSnapBlocks.find(it.first) == kofxiSnapBlocks.end())
+				stale.push_back(it.second.get());
+		for (RuntimeBlockInfo* b : stale)
+			bm_DiscardBlock(b);
+	}
+	if (mode & 2)
+		for (size_t i = 0; i < pageCount; i++)
+			unprotected_pages[i] = kofxiSnapUnprot[i];
+	if (mode & 4)
+		for (size_t i = 0; i < pageCount; i++)
+		{
+			if (unprotected_pages[i])
+				bm_UnlockPage((u32)(i * PAGE_SIZE));
+			else if (!blocks_per_page[i].empty())
+				bm_LockPage((u32)(i * PAGE_SIZE));
+		}
+}
+
 // KOFXI rollback diagnosis (temporary): pieces of bm_ResetCache() on their own
 void kofxiBenchBm(unsigned m)
 {

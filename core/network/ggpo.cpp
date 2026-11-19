@@ -29,6 +29,8 @@
 #include <algorithm>
 
 void kofxiBenchReset(unsigned mask);
+void kofxiBenchSnap();
+void kofxiBenchRestoreProt(unsigned mode);
 extern bool *unprotected_pages;
 namespace ggpo
 {
@@ -1024,6 +1026,7 @@ __declspec(noinline) static void benchPercentiles(std::vector<long long> v, FILE
 }
 
 // ---- Diagnosis: why is the restore not exact? Ladder T0..T3, per-page hashes of RAM / VRAM / ARAM ----
+static bool g_benchHash = true;
 static std::vector<u64> benchPageHashes() {
 	std::vector<u64> v;
 	for (int r = 0; r < 3; r++) {
@@ -1049,7 +1052,7 @@ static void benchRunFrames(BenchCtx& c, int from, int to, std::vector<std::vecto
 	for (int f = from; f < to; f++) {
 		kcode[0] = ~c.in[f].p1; kcode[1] = ~c.in[f].p2;
 		benchAdvanceFrame();
-		hashes[f] = benchPageHashes();
+		if (g_benchHash) hashes[f] = benchPageHashes();
 	}
 }
 // Compares a run against the reference; returns first differing frame or -1
@@ -1063,6 +1066,19 @@ static int benchCompare(FILE* out, const char* tag, int from, int to, const std:
 }
 __declspec(noinline) static void benchTimes(FILE* out, const char* tag, long long restoreNs, long long runNs, int frames) {
 	std::fprintf(out, "  [%s] restore %.2f ms, then %d frames in %.1f ms (%.2f ms/frame, first included)", tag, (double)restoreNs / 1e6, frames, (double)runNs / 1e6, (double)runNs / 1e6 / frames);
+	std::fputc(10, out);
+}
+__declspec(noinline) static void benchTime8(FILE* out, int variant, long long prepNs, long long restoreNs, long long runNs, const long long* first, int frames) {
+	static const char* names[7] = {"ResetCache (everything recompiled)", "mode 6: restore bitmap + sync locks", "mode 7: + discard blocks compiled after the snapshot", "no restore action (control, inexact)", "memcpy only, no deserialize", "deserialize only, no memcpy", "nothing at all (control)"};
+	std::fprintf(out, "T8 %s: straight warm run %.2f ms/frame | restore %.3f ms | %d frames after restore %.2f ms/frame | first six frames ms: %.1f %.1f %.1f %.1f %.1f %.1f",
+		names[variant], (double)prepNs / 1e6 / frames, (double)restoreNs / 1e6, frames, (double)runNs / 1e6 / frames,
+		(double)first[0] / 1e6, (double)first[1] / 1e6, (double)first[2] / 1e6, (double)first[3] / 1e6, (double)first[4] / 1e6, (double)first[5] / 1e6);
+	std::fputc(10, out);
+}
+__declspec(noinline) static void benchTime9(FILE* out, const char* head, long long pagesNs, long long deserNs, long long protNs, long long runNs, const long long* first, int frames) {
+	std::fprintf(out, "%s | page restore %.2f ms, deserialize %.2f ms, protection %.3f ms | %d frames %.2f ms/frame | first six ms: %.1f %.1f %.1f %.1f %.1f %.1f", head,
+		(double)pagesNs / 1e6, (double)deserNs / 1e6, (double)protNs / 1e6, frames, (double)runNs / 1e6 / frames,
+		(double)first[0] / 1e6, (double)first[1] / 1e6, (double)first[2] / 1e6, (double)first[3] / 1e6, (double)first[4] / 1e6, (double)first[5] / 1e6);
 	std::fputc(10, out);
 }
 static void benchDiag(BenchCtx& c, FILE* out)
@@ -1192,6 +1208,117 @@ static void benchDiag(BenchCtx& c, FILE* out)
 		benchCompare(out, tag, K, F, ref, run);
 		benchTimes(out, tag, t1 - t0, t2 - t1, F - K);
 	}
+	// T7: restore the page-protection bookkeeping from a snapshot instead of recompiling everything.
+	// Each variant starts again from the savestate with a clean cache, snapshots at frame K, runs to F, restores, reruns.
+	static const unsigned modes[] = {7, 6, 3, 1, 0};
+	for (unsigned mode : modes) {
+		dc_loadstate(0);
+		emu.getSh4Executor()->ResetCache();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, 0, K, run);
+		kofxiBenchSnap();
+		benchRunFrames(c, K, F, run);
+		benchCompare(out, "T7 prep (straight run after ResetCache equals reference)", 0, F, ref, run);
+		for (int r = 0; r < 3; r++) std::memcpy(benchRegion(r), memCopy[r], benchRegionSize(r));
+		{
+			Deserializer dr(rbState.data(), rbState.size(), true);
+			dc_deserialize(dr);
+		}
+		long long t0 = benchNs();
+		kofxiBenchRestoreProt(mode);
+		long long t1 = benchNs();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, K, F, run);
+		long long t2 = benchNs();
+		char tag[96];
+		std::snprintf(tag, sizeof tag, "T7 mode %u (1=discard new blocks, 2=restore bitmap, 4=sync locks)", mode);
+		benchCompare(out, tag, K, F, ref, run);
+		benchTimes(out, tag, t1 - t0, t2 - t1, F - K);
+	}
+	// T8: honest timing, no per-frame hashing. Per-frame ns of the 40 frames after each restore variant.
+	g_benchHash = false;
+	for (int variant = 0; variant < 7; variant++) {
+		dc_loadstate(0);
+		emu.getSh4Executor()->ResetCache();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, 0, K, run);
+		kofxiBenchSnap();
+		long long p0 = benchNs();
+		benchRunFrames(c, K, F, run);
+		long long p1 = benchNs();
+		long long m0 = benchNs();
+		if (variant != 5)
+			for (int r = 0; r < 3; r++) std::memcpy(benchRegion(r), memCopy[r], benchRegionSize(r));
+		long long m1 = benchNs();
+		if (variant != 4 && variant != 6)
+		{
+			Deserializer dr(rbState.data(), rbState.size(), true);
+			dc_deserialize(dr);
+		}
+		long long m2 = benchNs();
+		if (variant >= 4) { char l[160]; std::snprintf(l, sizeof l, "T8 variant %d: memcpy %lld us, deserialize %lld us", variant, (m1 - m0) / 1000, (m2 - m1) / 1000); benchLine(out, l); }
+		long long t0 = benchNs();
+		if (variant == 0) kofxiBenchReset(15);
+		else if (variant == 1) kofxiBenchRestoreProt(6);
+		else if (variant == 2) kofxiBenchRestoreProt(7);
+		long long first[6] = {0, 0, 0, 0, 0, 0};
+		long long t1 = benchNs();
+		for (int f = K; f < F; f++) {
+			long long a0 = benchNs();
+			kcode[0] = ~c.in[f].p1; kcode[1] = ~c.in[f].p2;
+			benchAdvanceFrame();
+			if (f - K < 6) first[f - K] = benchNs() - a0;
+		}
+		long long t2 = benchNs();
+		benchTime8(out, variant, p1 - p0, t1 - t0, t2 - t1, first, F - K);
+	}
+	g_benchHash = true;
+	// T9: what GGPO would really do: restore only the pages that changed (memwatch), deserialize, restore protection.
+	for (int pass = 0; pass < 2; pass++) {
+		g_benchHash = (pass == 0);
+		for (int variant = 0; variant < 3; variant++) {
+			dc_loadstate(0);
+			emu.getSh4Executor()->ResetCache();
+			for (auto& vv : run) vv.clear();
+			benchRunFrames(c, 0, K, run);
+			kofxiBenchSnap();
+			benchRunFrames(c, K, F, run);
+			// pages that differ between now (frame F) and the saved frame K
+			u32 nPages = 0;
+			long long m0 = benchNs();
+			for (int r = 0; r < 3; r++) {
+				u8* cur = benchRegion(r);
+				for (u32 o = 0; o < benchRegionSize(r); o += 4096)
+					if (std::memcmp(cur + o, memCopy[r] + o, 4096) != 0) { std::memcpy(cur + o, memCopy[r] + o, 4096); ++nPages; }
+			}
+			long long m1 = benchNs();
+			{
+				Deserializer dr(rbState.data(), rbState.size(), true);
+				dc_deserialize(dr);
+			}
+			long long m2 = benchNs();
+			if (variant == 1) kofxiBenchRestoreProt(6);
+			else if (variant == 2) kofxiBenchRestoreProt(7);
+			long long m3 = benchNs();
+			long long first[6] = {0, 0, 0, 0, 0, 0};
+			std::vector<std::vector<u64>> hr(F);
+			long long t1 = benchNs();
+			for (int f = K; f < F; f++) {
+				long long a0 = benchNs();
+				kcode[0] = ~c.in[f].p1; kcode[1] = ~c.in[f].p2;
+				benchAdvanceFrame();
+				if (f - K < 6) first[f - K] = benchNs() - a0;
+				if (g_benchHash) hr[f] = benchPageHashes();
+			}
+			long long t2 = benchNs();
+			static const char* nm[3] = {"changed pages + deserialize only", "+ restore bitmap & locks (mode 6)", "+ discard later blocks (mode 7)"};
+			char head[160];
+			std::snprintf(head, sizeof head, "T9 %s [%s]: %u pages restored in %.2f ms", nm[variant], g_benchHash ? "hashed" : "timing", nPages, 0.0);
+			benchTime9(out, head, m1 - m0, m2 - m1, m3 - m2, t2 - t1, first, F - K);
+			if (g_benchHash) benchCompare(out, nm[variant], K, F, ref, hr);
+		}
+	}
+	g_benchHash = true;
 	std::fprintf(out, "DIAG done"); std::fputc(10, out); std::fflush(out);
 }
 
@@ -1227,11 +1354,20 @@ static void benchRunInputs()
 	std::fprintf(out, "inputs %zu frames, running %d (warm-up %d excluded); passes: A (no rollback) then B(L) for L in the list", c.in.size(), N, WARM);
 	std::fputc(10, out); std::fflush(out);
 	c.hashA.assign(N, 0);
+	std::vector<unsigned char> fullInit;
+	{
+		dc_loadstate(0);
+		Serializer sz; dc_serialize(sz); fullInit.resize(sz.size());
+		Serializer sf(fullInit.data(), fullInit.size()); dc_serialize(sf);
+	}
 	if (std::getenv("KOFXI_ROLLBACK_DIAG")) { benchDiag(c, out); std::fclose(out); std::_Exit(0); }
 	for (int pass = -1; pass < (int)lats.size(); pass++)
 	{
 		const int L = pass < 0 ? 0 : lats[pass];
-		dc_loadstate(0);
+		{
+			Deserializer di(fullInit.data(), fullInit.size());
+			emu.loadstate(di);
+		}
 		c.resetShadow();
 		const long long passStart = benchNs();
 		c.used2.assign(N + 1, 0);
