@@ -126,6 +126,7 @@ struct BenchStat {
 };
 static BenchStat benchSave, benchLoad, benchAdvance;
 static u64 benchBytes = 0, benchPagesRam = 0, benchPagesVram = 0, benchPagesAram = 0;
+static long long benchTick() { return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 static double benchNow() {
 	static const auto base = std::chrono::steady_clock::now();
 	return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - base).count();
@@ -324,9 +325,9 @@ static bool advance_frame(int)
 	rend_enable_renderer(false);
 	inRollback = true;
 
-	double t0 = benchNow();
+	long long t0 = benchTick();
 	emu.run();
-	benchAdvance.add(benchNow() - t0);
+	benchAdvance.add((double)(benchTick() - t0) / 1e6);
 	ggpo_advance_frame(ggpoSession);
 
 	settings.aica.muteAudio = false;
@@ -347,9 +348,9 @@ static bool advance_frame(int)
 static bool load_game_state_impl(unsigned char *buffer, int len);
 static bool load_game_state(unsigned char *buffer, int len)
 {
-	double t0 = benchNow();
+	long long t0 = benchTick();
 	bool r = load_game_state_impl(buffer, len);
-	benchLoad.add(benchNow() - t0);
+	benchLoad.add((double)(benchTick() - t0) / 1e6);
 	return r;
 }
 static bool load_game_state_impl(unsigned char *buffer, int len)
@@ -397,9 +398,9 @@ static bool load_game_state_impl(unsigned char *buffer, int len)
 static bool save_game_state_impl(unsigned char **buffer, int *len, int *checksum, int frame);
 static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int frame)
 {
-	double t0 = benchNow();
+	long long t0 = benchTick();
 	bool r = save_game_state_impl(buffer, len, checksum, frame);
-	benchSave.add(benchNow() - t0);
+	benchSave.add((double)(benchTick() - t0) / 1e6);
 	if (r) {
 		benchBytes += *len;
 		if (frame > 0 && deltaStates.count(frame - 1)) {
@@ -1533,6 +1534,50 @@ static void benchRunInputs()
 	std::_Exit(0);
 }
 
+// ---- KOFXI scripted netplay test (temporary): feeds the local player's inputs from a Fightcade replay csv ----
+struct NetScript {
+	std::vector<u32> in;
+	size_t idx = 0;
+	size_t hashAt = 0;
+	FILE* log = nullptr;
+	bool loaded = false;
+};
+static NetScript& netScript() {
+	static NetScript ns;
+	if (!ns.loaded) {
+		ns.loaded = true;
+		const char* csv = std::getenv("KOFXI_NET_INPUTS");
+		if (csv) {
+			std::ifstream f(csv); std::string line; std::getline(f, line);
+			const int col = std::getenv("KOFXI_NET_COLUMN") ? std::atoi(std::getenv("KOFXI_NET_COLUMN")) : 1;
+			size_t limit = std::getenv("KOFXI_NET_FRAMES") ? (size_t)std::atoi(std::getenv("KOFXI_NET_FRAMES")) : 3000;
+			while (std::getline(f, line) && ns.in.size() < limit) {
+				unsigned fr = 0, a = 0, b = 0;
+				if (std::sscanf(line.c_str(), "%u,%u,%u", &fr, &a, &b) == 3) ns.in.push_back(col == 1 ? a : b);
+			}
+			ns.hashAt = ns.in.size() + 120;
+			const char* lp = std::getenv("KOFXI_NET_LOG");
+			ns.log = std::fopen(lp ? lp : "net_script.txt", "w");
+		}
+	}
+	return ns;
+}
+// Called after a local input was accepted for a new frame
+static void netScriptAdvance() {
+	NetScript& ns = netScript();
+	if (ns.in.empty()) return;
+	++ns.idx;
+	if (ns.log && ns.idx % 300 == 0) { std::fprintf(ns.log, "progress %zu", ns.idx); std::fputc(10, ns.log); std::fflush(ns.log); }
+	if (ns.idx == ns.hashAt && ns.log) {
+		std::fprintf(ns.log, "hash idx %zu ram %016llx saves %llu loads %llu", ns.idx, (unsigned long long)benchMemHash(), (unsigned long long)benchSave.n, (unsigned long long)benchLoad.n);
+		std::fputc(10, ns.log); std::fflush(ns.log);
+	}
+	if (ns.idx == ns.hashAt + 120 && ns.log) {
+		std::fprintf(ns.log, "done"); std::fputc(10, ns.log); std::fclose(ns.log); ns.log = nullptr;
+		std::_Exit(0);
+	}
+}
+
 bool nextFrame()
 {
 	if (benchOn() && ggpoSession == nullptr)
@@ -1588,6 +1633,7 @@ bool nextFrame()
 			os_UpdateInputState();
 		Inputs inputs;
 		inputs.kcode = ~kcode[0];
+		{ NetScript& nsc = netScript(); if (!nsc.in.empty()) inputs.kcode = nsc.idx < nsc.in.size() ? nsc.in[nsc.idx] : 0; }
 		if (rt[0] >= 0x4000)
 			inputs.kcode |= BTN_TRIGGER_RIGHT;
 		else
@@ -1626,8 +1672,10 @@ bool nextFrame()
 			mo_wheel_delta[0] -= inputs.u.relPos.wheel;
 		}
 		error = ggpo_add_local_input(ggpoSession, localPlayer, &inputs, inputSize);
-		if (error == GGPO_OK)
+		if (error == GGPO_OK) {
+			netScriptAdvance();
 			break;
+		}
 		if (error != GGPO_ERRORCODE_PREDICTION_THRESHOLD)
 		{
 			WARN_LOG(NETWORK, "ggpo_add_local_input failed %d", error);
