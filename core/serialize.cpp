@@ -18,40 +18,57 @@
 #include "imgread/common.h"
 #include "achievements/achievements.h"
 
+#include <vector>
+std::vector<std::pair<const char*, size_t>> kofxiSerMarks;
 void dc_serialize(Serializer& ser)
 {
+	kofxiSerMarks.clear();
 	aica::serialize(ser);
+	kofxiSerMarks.push_back({"aica::serialize", ser.size()});
 
 	sb_serialize(ser);
+	kofxiSerMarks.push_back({"sb_serialize", ser.size()});
 
 	nvmem::serialize(ser);
+	kofxiSerMarks.push_back({"nvmem::serialize", ser.size()});
 
 	gdrom::serialize(ser);
+	kofxiSerMarks.push_back({"gdrom::serialize", ser.size()});
 
 	mcfg_SerializeDevices(ser);
+	kofxiSerMarks.push_back({"mcfg_SerializeDevices", ser.size()});
 
 	pvr::serialize(ser);
+	kofxiSerMarks.push_back({"pvr::serialize", ser.size()});
 
 	sh4::serialize(ser);
+	kofxiSerMarks.push_back({"sh4::serialize", ser.size()});
 
 	ser << config::EmulateBBA.get();
 	if (config::EmulateBBA)
 		bba_Serialize(ser);
 	ModemSerialize(ser);
+	kofxiSerMarks.push_back({"ModemSerialize", ser.size()});
 
 	sh4::serialize2(ser);
+	kofxiSerMarks.push_back({"sh4::serialize2", ser.size()});
 
 	libGDR_serialize(ser);
+	kofxiSerMarks.push_back({"libGDR_serialize", ser.size()});
 
 	naomi_Serialize(ser);
+	kofxiSerMarks.push_back({"naomi_Serialize", ser.size()});
 
 	ser << config::Broadcast.get();
 	ser << config::Cable.get();
 	ser << config::Region.get();
 
 	naomi_cart_serialize(ser);
+	kofxiSerMarks.push_back({"naomi_cart_serialize", ser.size()});
 	reios_serialize(ser);
+	kofxiSerMarks.push_back({"reios_serialize", ser.size()});
 	achievements::serialize(ser);
+	kofxiSerMarks.push_back({"achievements::serialize", ser.size()});
 
 	DEBUG_LOG(SAVESTATE, "Saved %d bytes", (u32)ser.size());
 }

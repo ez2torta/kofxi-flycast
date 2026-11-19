@@ -1549,8 +1549,11 @@ constexpr int CDDA_SIZE = 2352 / 2;
 static s16 cdda_sector[CDDA_SIZE];
 static u32 cdda_index = CDDA_SIZE;
 
+bool kofxiSkipAicaSynth = false;
 void AICA_Sample()
 {
+	if (kofxiSkipAicaSynth)
+		return;
 	SampleType mixl,mixr;
 	mixl = 0;
 	mixr = 0;

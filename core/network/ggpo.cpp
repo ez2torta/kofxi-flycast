@@ -29,6 +29,12 @@
 #include <algorithm>
 
 void kofxiBenchReset(unsigned mask);
+#include <vector>
+#include <utility>
+extern std::vector<std::pair<const char*, size_t>> kofxiSerMarks;
+namespace aica { namespace sgc { extern bool kofxiSkipAicaSynth; } }
+void kofxiProfStart();
+void kofxiProfStop(const char* path);
 void kofxiBenchSnap();
 void kofxiBenchRestoreProt(unsigned mode);
 extern bool *unprotected_pages;
@@ -1033,6 +1039,12 @@ static std::vector<u64> benchPageHashes() {
 		const u8* q = benchRegion(r); const u32 n = benchRegionSize(r) / 4096;
 		for (u32 i = 0; i < n; i++) v.push_back(XXH3_64bits(q + i * 4096, 4096));
 	}
+	{
+		static std::vector<unsigned char> sbuf(4 * 1024 * 1024);
+		Serializer ss(sbuf.data(), sbuf.size(), true);
+		dc_serialize(ss);
+		v.push_back(XXH3_64bits(sbuf.data(), ss.size()));
+	}
 	return v;
 }
 __declspec(noinline) static void benchDiffReport(FILE* out, const char* tag, int f, const std::vector<u64>& a, const std::vector<u64>& b) {
@@ -1080,6 +1092,30 @@ __declspec(noinline) static void benchTime9(FILE* out, const char* head, long lo
 		(double)pagesNs / 1e6, (double)deserNs / 1e6, (double)protNs / 1e6, frames, (double)runNs / 1e6 / frames,
 		(double)first[0] / 1e6, (double)first[1] / 1e6, (double)first[2] / 1e6, (double)first[3] / 1e6, (double)first[4] / 1e6, (double)first[5] / 1e6);
 	std::fputc(10, out);
+}
+__declspec(noinline) static void benchTime10(FILE* out, long long resimNs, long long normalNs, int nResim, int nNormal) {
+	std::fprintf(out, "  resim frames %.2f ms/frame, following normal frames %.2f ms/frame", (double)resimNs / 1e6 / nResim, (double)normalNs / 1e6 / nNormal);
+	std::fputc(10, out);
+}
+__declspec(noinline) static void benchStateDiff(FILE* out, const std::vector<unsigned char>& a, const std::vector<unsigned char>& b, const std::vector<std::pair<const char*, size_t>>& marks) {
+	std::fprintf(out, "T11 state buffers: straight %zu bytes, restored %zu bytes", a.size(), b.size());
+	std::fputc(10, out);
+	size_t prev = 0;
+	for (const auto& m : marks) {
+		size_t diff = 0, first = (size_t)-1;
+		for (size_t i = prev; i < m.second && i < a.size() && i < b.size(); i++)
+			if (a[i] != b[i]) { ++diff; if (first == (size_t)-1) first = i; }
+		if (diff) { std::fprintf(out, "  section %s [%zu..%zu): %zu bytes differ, first at %zu", m.first, prev, m.second, diff, first); std::fputc(10, out); }
+		if (diff) {
+			std::fprintf(out, "    diffs (offset-in-section: straight->restored):");
+			int shown = 0;
+			for (size_t i = prev; i < m.second && i < a.size() && i < b.size() && shown < 40; i++)
+				if (a[i] != b[i]) { std::fprintf(out, " %zu:%02x->%02x", i - prev, a[i], b[i]); ++shown; }
+			std::fputc(10, out);
+		}
+		prev = m.second;
+	}
+	std::fprintf(out, "T11 done"); std::fputc(10, out);
 }
 static void benchDiag(BenchCtx& c, FILE* out)
 {
@@ -1319,9 +1355,98 @@ static void benchDiag(BenchCtx& c, FILE* out)
 		}
 	}
 	g_benchHash = true;
+	// T10: skip the AICA synthesis during the resimulated frames only (first 20 after the restore), then run 20 normal frames
+	for (int pass = 0; pass < 2; pass++) {
+		for (int skip = 0; skip < 2; skip++) {
+			g_benchHash = (pass == 0);
+			dc_loadstate(0);
+			emu.getSh4Executor()->ResetCache();
+			for (auto& vv : run) vv.clear();
+			benchRunFrames(c, 0, K, run);
+			benchRunFrames(c, K, F, run);
+			for (int r = 0; r < 3; r++) {
+				u8* cur = benchRegion(r);
+				for (u32 o = 0; o < benchRegionSize(r); o += 4096)
+					if (std::memcmp(cur + o, memCopy[r] + o, 4096) != 0) std::memcpy(cur + o, memCopy[r] + o, 4096);
+			}
+			{
+				Deserializer dr(rbState.data(), rbState.size(), true);
+				dc_deserialize(dr);
+			}
+			std::vector<std::vector<u64>> hr(F);
+			long long resimNs = 0, normalNs = 0;
+			for (int f = K; f < F; f++) {
+				aica::sgc::kofxiSkipAicaSynth = (skip == 1 && f < K + 20);
+				long long a0 = benchNs();
+				kcode[0] = ~c.in[f].p1; kcode[1] = ~c.in[f].p2;
+				benchAdvanceFrame();
+				long long d = benchNs() - a0;
+				if (f < K + 20) resimNs += d; else normalNs += d;
+				if (g_benchHash) hr[f] = benchPageHashes();
+			}
+			aica::sgc::kofxiSkipAicaSynth = false;
+			char tag[96];
+			std::snprintf(tag, sizeof tag, "T10 %s AICA synth in resim frames [%s]", skip ? "SKIP" : "keep", g_benchHash ? "hashed" : "timing");
+			benchLine(out, tag);
+			if (g_benchHash) benchCompare(out, tag, K, F, ref, hr);
+			else benchTime10(out, resimNs, normalNs, 20, 20);
+		}
+	}
+	g_benchHash = true;
+	// T11: which section of the serialized (non-memory) state differs between the straight run and a restored run?
+	{
+		g_benchHash = false;
+		dc_loadstate(0);
+		emu.getSh4Executor()->ResetCache();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, 0, K, run);
+		benchRunFrames(c, K, K + 1, run);
+		std::vector<unsigned char> refBuf(4 * 1024 * 1024);
+		{ Serializer s1(refBuf.data(), refBuf.size(), true); dc_serialize(s1); refBuf.resize(s1.size()); }
+		std::vector<std::pair<const char*, size_t>> marks = kofxiSerMarks;
+		benchRunFrames(c, K + 1, F, run);
+		for (int r = 0; r < 3; r++) {
+			u8* cur = benchRegion(r);
+			for (u32 o = 0; o < benchRegionSize(r); o += 4096)
+				if (std::memcmp(cur + o, memCopy[r] + o, 4096) != 0) std::memcpy(cur + o, memCopy[r] + o, 4096);
+		}
+		{ Deserializer dr(rbState.data(), rbState.size(), true); dc_deserialize(dr); }
+		benchRunFrames(c, K, K + 1, run);
+		std::vector<unsigned char> resBuf(4 * 1024 * 1024);
+		{ Serializer s2(resBuf.data(), resBuf.size(), true); dc_serialize(s2); resBuf.resize(s2.size()); }
+		benchStateDiff(out, refBuf, resBuf, marks);
+		// control: a second straight run from the same savestate, no restore involved
+		dc_loadstate(0);
+		emu.getSh4Executor()->ResetCache();
+		for (auto& vv : run) vv.clear();
+		benchRunFrames(c, 0, K + 1, run);
+		std::vector<unsigned char> ctlBuf(4 * 1024 * 1024);
+		{ Serializer s3(ctlBuf.data(), ctlBuf.size(), true); dc_serialize(s3); ctlBuf.resize(s3.size()); }
+		benchLine(out, "T11 control: straight run vs a second straight run (no restore)");
+		benchStateDiff(out, refBuf, ctlBuf, marks);
+		g_benchHash = true;
+	}
 	std::fprintf(out, "DIAG done"); std::fputc(10, out); std::fflush(out);
 }
 
+
+static void benchProfile(BenchCtx& c, FILE* out)
+{
+	const int WARM = 240, N = std::min<int>((int)c.in.size(), 1700);
+	dc_loadstate(0);
+	long long t0 = 0, t1 = 0;
+	for (int f = 0; f < N; f++)
+	{
+		if (f == WARM) { kofxiProfStart(); t0 = benchNs(); }
+		kcode[0] = ~c.in[f].p1; kcode[1] = ~c.in[f].p2;
+		benchAdvanceFrame();
+	}
+	t1 = benchNs();
+	const char* path = std::getenv("KOFXI_PROFILE_OUT");
+	kofxiProfStop(path ? path : "prof_rips.txt");
+	std::fprintf(out, "profile: %d frames in %.1f ms (%.2f ms/frame while sampling)", N - WARM, (double)(t1 - t0) / 1e6, (double)(t1 - t0) / 1e6 / (N - WARM));
+	std::fputc(10, out); std::fflush(out);
+}
 __declspec(noinline) static void benchHeader(FILE* out, int pass, int L, int N, long long wallNs, long long rollbacks, long long resim, long long ok, long long bad)
 {
 	std::fprintf(out, "wall for pass: %.1f ms (%.3f ms per frame, includes hashing)", (double)wallNs / 1e6, (double)wallNs / 1e6 / N);
@@ -1360,6 +1485,7 @@ static void benchRunInputs()
 		Serializer sz; dc_serialize(sz); fullInit.resize(sz.size());
 		Serializer sf(fullInit.data(), fullInit.size()); dc_serialize(sf);
 	}
+	if (std::getenv("KOFXI_ROLLBACK_PROFILE")) { benchProfile(c, out); std::fclose(out); std::_Exit(0); }
 	if (std::getenv("KOFXI_ROLLBACK_DIAG")) { benchDiag(c, out); std::fclose(out); std::_Exit(0); }
 	for (int pass = -1; pass < (int)lats.size(); pass++)
 	{

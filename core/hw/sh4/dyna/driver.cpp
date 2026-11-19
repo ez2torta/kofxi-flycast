@@ -1,3 +1,64 @@
+#ifdef _WIN32
+// KOFXI profiling (temporary): samples the RIP of the calling thread from a helper thread
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <atomic>
+#include <thread>
+#include <vector>
+#include <cstdio>
+#include "blockmanager.h"
+static std::atomic<bool> kofxiProfStopFlag;
+static std::thread kofxiProfThread;
+static std::vector<unsigned long long> kofxiProfSamples;
+static HANDLE kofxiProfTarget;
+void kofxiProfStart()
+{
+	kofxiProfStopFlag = false;
+	kofxiProfSamples.clear();
+	kofxiProfSamples.reserve(400000);
+	DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &kofxiProfTarget, 0, FALSE, DUPLICATE_SAME_ACCESS);
+	kofxiProfThread = std::thread([] {
+		LARGE_INTEGER freq, next, now;
+		QueryPerformanceFrequency(&freq);
+		const long long step = freq.QuadPart / 2000;	// 0.5 ms
+		QueryPerformanceCounter(&next);
+		while (!kofxiProfStopFlag)
+		{
+			next.QuadPart += step;
+			do { QueryPerformanceCounter(&now); } while (now.QuadPart < next.QuadPart && !kofxiProfStopFlag);
+			if (SuspendThread(kofxiProfTarget) == (DWORD)-1)
+				continue;
+			CONTEXT ctx;
+			ctx.ContextFlags = CONTEXT_CONTROL;
+			if (GetThreadContext(kofxiProfTarget, &ctx) && kofxiProfSamples.size() < kofxiProfSamples.capacity())
+				kofxiProfSamples.push_back(ctx.Rip);
+			ResumeThread(kofxiProfTarget);
+		}
+	});
+}
+void kofxiProfStop(const char* path)
+{
+	kofxiProfStopFlag = true;
+	kofxiProfThread.join();
+	CloseHandle(kofxiProfTarget);
+	FILE* f = std::fopen(path, "w");
+	if (!f)
+		return;
+	HMODULE mod = GetModuleHandleA(nullptr);
+	std::fprintf(f, "base %llx\n", (unsigned long long)(uintptr_t)mod);
+	for (unsigned long long r : kofxiProfSamples)
+	{
+		RuntimeBlockInfoPtr blk = bm_GetBlock((void*)(uintptr_t)r);
+		std::fprintf(f, "%llx %x\n", r, blk ? blk->vaddr : 0u);
+	}
+	std::fclose(f);
+}
+#else
+void kofxiProfStart() {}
+void kofxiProfStop(const char*) {}
+#endif
+
 #include "types.h"
 #include <unordered_set>
 
