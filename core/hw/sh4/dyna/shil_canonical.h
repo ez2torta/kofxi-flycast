@@ -949,7 +949,7 @@ shil_opc(fmac)
 shil_canonical
 (
 f32,f1,(float fn, float f0,float fm),
-	return fixNaN(std::fma(f0, fm, fn));
+	return fixNaN(kofxiNoFma ? (float)(fn + f0 * fm) : std::fma(f0, fm, fn));
 )
 shil_compile
 (

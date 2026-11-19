@@ -510,7 +510,7 @@ public:
 					{
 						movss(rd, rs1);
 					}
-					if (cpu.has(Cpu::tFMA) && !config::GGPOEnable)
+					if (cpu.has(Cpu::tFMA) && !config::GGPOEnable && !kofxiNoFma)
 						vfmadd231ss(rd, rs2, rs3);
 					else
 					{

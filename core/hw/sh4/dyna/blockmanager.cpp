@@ -4,6 +4,8 @@
 */
 
 #include <algorithm>
+#include <cstdlib>
+bool kofxiNoFma = std::getenv("KOFXI_NO_FMA") != nullptr;
 #include <set>
 #include <map>
 #include "blockmanager.h"

@@ -1,4 +1,5 @@
 #pragma once
+extern bool kofxiNoFma;
 #include "build.h"
 
 #if HOST_CPU == CPU_X86
