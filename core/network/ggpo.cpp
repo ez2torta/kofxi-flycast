@@ -1512,8 +1512,25 @@ static void benchRunInputs()
 			benchAdvanceFrame();
 			{ const char* dmp = std::getenv("KOFXI_AUDIT_DUMP"); if (dmp) { int d1 = std::atoi(dmp); const char* c2 = std::strchr(dmp, ','); int d2 = c2 ? std::atoi(c2 + 1) : -1;
 			    if (f == d1 || f == d2) { std::string nm = std::string(logp ? logp : "audit") + ".dump" + std::to_string(f); FILE* df = std::fopen(nm.c_str(), "wb"); if (df) { std::fwrite(&mem_b[0x27C000], 1, 0x2000, df); std::fclose(df); } FILE* cf = std::fopen((nm + ".code").c_str(), "wb"); if (cf) { std::fwrite(&mem_b[0x0A0000], 1, 256, cf); std::fclose(cf); } } } }
+			if (std::getenv("KOFXI_AUDIT_FINDCTR") && f >= 3000 && f < 3004)
+			{
+				static std::vector<std::vector<unsigned char>> snaps;
+				snaps.emplace_back(&mem_b[0], &mem_b[0] + RAM_SIZE);
+				if (f == 3003)
+				{
+					int shown = 0;
+					for (size_t o = 0; o + 4 <= RAM_SIZE && shown < 60; o += 2)
+					{
+						u16 v[4]; for (int i = 0; i < 4; i++) std::memcpy(&v[i], &snaps[i][o], 2);
+						if ((u16)(v[1] - v[0]) == 1 && (u16)(v[2] - v[1]) == 1 && (u16)(v[3] - v[2]) == 1)
+						{ std::fprintf(out, "CTR16 0x%08zx %u", (size_t)0x8C000000 + o, (unsigned)v[3]); std::fputc(10, out); ++shown; }
+					}
+					std::fflush(out);
+				}
+			}
 			static long long lastCyc = 0; long long nowCyc = (long long)sh4_sched_now64(); long long dCyc = nowCyc - lastCyc; lastCyc = nowCyc;
 			std::fprintf(out, "%d %lld %zu %u %u %u %u %u", f, dCyc, auditPoll, rd(0x8C27CEA0), rd(0x8C27CEE0), rd(0x8C27CCC8), rd(0x8C27CB78), rd(0x8C27CB7A));
+			{ static u32 ctrAddr = std::getenv("KOFXI_AUDIT_CTR") ? (u32)std::strtoul(std::getenv("KOFXI_AUDIT_CTR"), nullptr, 16) : 0; if (ctrAddr) { u32 A = 1, B = 0; for (int i = 0; i < 0x2000; i++) { A = (A + mem_b[0x27C000 + i]) % 65521; B = (B + A) % 65521; } std::fprintf(out, " ctr %u reg %08x", rd(ctrAddr), (B << 16) | A); } }
 			std::fputc(10, out);
 		}
 		std::fclose(out); std::_Exit(0);
