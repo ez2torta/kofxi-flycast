@@ -570,7 +570,8 @@ void rend_start_render()
 		else {
 			ctx->rend.clearFramebuffer = false;
 		}
-		ggpo::endOfFrame();
+		if (!ggpo::active())
+			ggpo::endOfFrame();
 		swapIntervalDetector.render();
 		if (!config::EmulateFramebuffer)
 			ctx->rend.swapInterval = swapIntervalDetector.swapInterval();
