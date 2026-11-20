@@ -14,6 +14,7 @@
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
  */
+#include <cstdlib>
 #include "types.h"
 #include "hw/holly/sb.h"
 #include "hw/sh4/sh4_mem.h"
@@ -175,6 +176,12 @@ static void Naomi_DmaStart(u32 addr, u32 data)
 		// Max G1 bus rate: 50 MHz x 16 bits
 		// SH4_access990312_e.xls: 14.4 MB/s from GD-ROM to system RAM
 		// Here: 20 MB/s
+		// KOFXI: Dojo 6.46 does the whole cartridge DMA synchronously
+		static const bool dmaInstant = std::getenv("KOFXI_NAOMI_DMA_INSTANT") != nullptr;
+		if (dmaInstant) {
+			while (naomiDmaSched(0, 0, 0, nullptr) != 0) {}
+			return;
+		}
 		sh4_sched_request(dmaSchedId, std::min<int>(SB_GDLEN, 1024) * dmaXferDelay);
 		return;
 	}
