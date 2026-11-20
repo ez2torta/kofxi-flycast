@@ -1572,6 +1572,12 @@ static void benchRunInputs()
 			long long e = benchExec(c, f, c.in[f].p1, c.used2[f]);
 			T += e;
 			if (pass < 0) c.hashA[f] = benchMemHash();
+			if (pass < 0) { static FILE* sf = std::getenv("KOFXI_SERIES") ? std::fopen(std::getenv("KOFXI_SERIES"), "w") : nullptr;
+				if (sf) { const u8* R = &mem_b[0];
+					auto r16 = [&](u32 o) { u16 v; std::memcpy(&v, R + o, 2); return (unsigned)v; };
+					std::fprintf(sf, "%d %u %u %u %u %u %u %u %u %u\n", f, r16(0x1478C8), r16(0x27CB78), (unsigned)R[0x27CB78],
+						r16(0x27CEA0), (unsigned)R[0x27CEA0], r16(0x27CEE0), (unsigned)R[0x27CEE0], r16(0x27CCC8), (unsigned)R[0x27CCC8]);
+					if (f == N - 1 && std::getenv("KOFXI_SERIES_ONLY")) { std::fclose(sf); std::fflush(out); std::_Exit(0); } } }
 			if (f >= WARM) { perFrame.push_back(T); execOnly.push_back(e); }
 		}
 		benchHeader(out, pass, L, N, benchNs() - passStart, (long long)rollbacks, (long long)resim, (long long)checksOk, (long long)checksBad);

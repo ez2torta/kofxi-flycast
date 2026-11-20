@@ -510,7 +510,7 @@ public:
 					{
 						movss(rd, rs1);
 					}
-					if (cpu.has(Cpu::tFMA) && !config::GGPOEnable && !kofxiNoFma)
+					if (cpu.has(Cpu::tFMA) && !config::GGPOEnable && !std::getenv("KOFXI_FMAC_SPLIT") && !kofxiNoFma)
 						vfmadd231ss(rd, rs2, rs3);
 					else
 					{
