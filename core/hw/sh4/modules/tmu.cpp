@@ -2,6 +2,7 @@
 	Lovely timers, its amazing how many times this module was bugged
 */
 
+#include <cstdlib>
 #include "types.h"
 #include "hw/sh4/sh4_sched.h"
 #include "hw/sh4/sh4_interrupts.h"
@@ -21,6 +22,10 @@ int tmu_sched[3];
 static s64 tmu_ch_base[3];
 
 inline static u64 now() {
+	// KOFXI: Dojo 6.46 reads TMU time quantized to the timeslice
+	static const bool tmuOld = std::getenv("KOFXI_TMU_OLD") != nullptr;
+	if (tmuOld)
+		return sh4_sched_now64();
 	return sh4_sched_now64() + SH4_TIMESLICE - p_sh4rcb->cntx.cycle_counter;
 }
 
