@@ -134,7 +134,10 @@ void SCIFSerialPort::updateBaudRate()
 	int bauds = SH4_MAIN_CLOCK / 4 / (SCIF_SCBRR2 + 1) / 32 / (1 << (SCIF_SCSMR2.CKS * 2));
 	cyclesPerBit = SH4_MAIN_CLOCK / bauds;
 	INFO_LOG(SH4, "SCIF: Frame size %d cycles/bit %d (%d bauds) pipe %p", frameSize, cyclesPerBit, bauds, pipe);
-	sh4_sched_request(schedId, frameSize * cyclesPerBit);
+	// KOFXI: Dojo 6.46 has no SCIF timing event; KOFXI_NO_SCIF_SCHED skips the (no-op) one when nothing is attached
+	static const bool noScifSched = std::getenv("KOFXI_NO_SCIF_SCHED") != nullptr;
+	if (!(noScifSched && pipe == nullptr))
+		sh4_sched_request(schedId, frameSize * cyclesPerBit);
 }
 
 // SCIF SCFTDR2 - Transmit FIFO Data Register

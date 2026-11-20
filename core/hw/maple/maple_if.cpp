@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "maple_if.h"
 #include "maple_cfg.h"
 #include "maple_helper.h"
@@ -319,6 +320,10 @@ static void maple_DoDma()
 		// 740 Kb/s from devices
 		cycles += sh4CyclesForXfer(xferOut, 740'000 / 8);
 		cycles = std::min<u32>(cycles, SH4_MAIN_CLOCK);
+		// KOFXI: Flycast 2023 / Dojo 6.46 model: 762 cycles per byte (256 KB/s); KOFXI_MAPLE_OLD selects it
+		static const bool mapleOld = std::getenv("KOFXI_MAPLE_OLD") != nullptr;
+		if (mapleOld)
+			cycles = (u32)std::min<u64>((u64)(xferIn + xferOut) * (SH4_MAIN_CLOCK / (256 * 1024)), (u64)SH4_MAIN_CLOCK);
 		sh4_sched_request(maple_schid, cycles);
 	}
 }

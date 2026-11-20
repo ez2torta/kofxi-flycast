@@ -83,10 +83,18 @@ int sh4_sched_register(int tag, sh4_sched_callback* ssc, void *arg)
 		if (sched.cb == nullptr)
 		{
 			sched = t;
+			if (const char* rp = std::getenv("KOFXI_SCHED_LOG")) {
+				char b[600]; std::snprintf(b, sizeof b, "%s.reg.%lu", rp, (unsigned long)GetCurrentProcessId());
+				if (FILE* rf = std::fopen(b, "a")) { std::fprintf(rf, "id %d rva %llx", (int)(&sched - &sch_list[0]), (unsigned long long)((uintptr_t)ssc - (uintptr_t)GetModuleHandleA(nullptr))); std::fputc(10, rf); std::fclose(rf); }
+			}
 			return &sched - &sch_list[0];
 		}
 
 	sch_list.push_back(t);
+	if (const char* rp = std::getenv("KOFXI_SCHED_LOG")) {
+		char b[600]; std::snprintf(b, sizeof b, "%s.reg.%lu", rp, (unsigned long)GetCurrentProcessId());
+		if (FILE* rf = std::fopen(b, "a")) { std::fprintf(rf, "id %d rva %llx", (int)(sch_list.size() - 1), (unsigned long long)((uintptr_t)ssc - (uintptr_t)GetModuleHandleA(nullptr))); std::fputc(10, rf); std::fclose(rf); }
+	}
 
 	return sch_list.size() - 1;
 }
