@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "spg.h"
 #include "hw/holly/holly_intc.h"
 #include "hw/holly/sb.h"
@@ -321,7 +322,8 @@ void scheduleRenderDone(TA_context *cntx)
 			int size = 0;
 			for (TA_context *c = cntx; c != nullptr; c = c->nextContext)
 				size += c->tad.thd_data - c->tad.thd_root;
-			cycles = std::min(450000 + size * 100, 1500000);
+			static const int rdBase = std::getenv("KOFXI_RD_BASE") ? std::atoi(std::getenv("KOFXI_RD_BASE")) : 450000;
+			cycles = std::min(rdBase + size * 100, 1500000);
 		}
 	}
 	sh4_sched_request(render_end_schid, cycles);
