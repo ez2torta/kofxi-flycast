@@ -1616,6 +1616,12 @@ static void netScriptAdvance() {
 	NetScript& ns = netScript();
 	if (ns.in.empty()) return;
 	++ns.idx;
+	static FILE* ser = [](){ const char* sp = std::getenv("KOFXI_NET_SERIES"); return sp ? std::fopen(sp, "w") : nullptr; }();
+	if (ser) {
+		auto rd = [](u32 addr) { u16 v; std::memcpy(&v, &mem_b[addr - 0x8C000000], 2); return (unsigned)v; };
+		std::fprintf(ser, "%zu %u %u %u %u %u\n", ns.idx, rd(0x8C1478C8), rd(0x8C27CEA0), rd(0x8C27CEE0), rd(0x8C27CCC8), rd(0x8C27CB78));
+		if (ns.idx % 120 == 0) std::fflush(ser);
+	}
 	if (ns.log && ns.idx % 300 == 0) { std::fprintf(ns.log, "progress %zu", ns.idx); std::fputc(10, ns.log); std::fflush(ns.log); }
 	if (ns.idx == ns.hashAt && ns.log) {
 		std::fprintf(ns.log, "hash idx %zu ram %016llx saves %llu loads %llu", ns.idx, (unsigned long long)benchMemHash(), (unsigned long long)benchSave.n, (unsigned long long)benchLoad.n);

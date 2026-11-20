@@ -1,5 +1,6 @@
 #pragma once
 extern bool kofxiNoFma;
+extern bool kofxiFlipPass;
 #include "build.h"
 
 #if HOST_CPU == CPU_X86

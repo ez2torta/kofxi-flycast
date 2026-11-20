@@ -1095,7 +1095,7 @@ void Emulator::vblank()
 	EventManager::event(Event::VBlank);
 	runner.execTasks();
 	// KOFXI (from Flycast Dojo 745815c92): with GGPO the pass always ends at the emulated vblank, not at the framebuffer flip
-	if (ggpo::active())
+	if (ggpo::active() && !kofxiFlipPass)
 	{
 		ggpo::endOfFrame();
 		return;
@@ -1103,7 +1103,9 @@ void Emulator::vblank()
 	// Time out if a frame hasn't been rendered for 50 ms
 	if (!config::VblankPacing && sh4_sched_now64() - startTime <= 50_sh4ms)
 		return;
-	if (!config::ThreadedRendering)
+	if (ggpo::active())
+		ggpo::endOfFrame();
+	else if (!config::ThreadedRendering)
 		getSh4Executor()->Stop();
 }
 

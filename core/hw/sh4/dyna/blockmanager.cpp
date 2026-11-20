@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdlib>
 bool kofxiNoFma = std::getenv("KOFXI_NO_FMA") != nullptr;
+bool kofxiFlipPass = std::getenv("KOFXI_FLIP_PASS") != nullptr;
 #include <set>
 #include <map>
 #include "blockmanager.h"

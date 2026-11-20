@@ -570,7 +570,7 @@ void rend_start_render()
 		else {
 			ctx->rend.clearFramebuffer = false;
 		}
-		if (!ggpo::active())
+		if (!ggpo::active() || kofxiFlipPass)
 			ggpo::endOfFrame();
 		swapIntervalDetector.render();
 		if (!config::EmulateFramebuffer)
