@@ -4,6 +4,8 @@
 */
 
 #include <cstdlib>
+#include <cstdio>
+#include <xxhash.h>
 #include "types.h"
 
 #if FEAT_SHREC != DYNAREC_NONE
@@ -27,6 +29,53 @@ static RuntimeBlockInfo* blk;
 static Sh4Cycles cycleCounter;
 // KOFXI: KOFXI_SH4_CYCLES_OLD selects the Dojo 6.46 block cycle model (1 cycle per opcode, loop/syscall multipliers)
 static const bool cyclesOld = std::getenv("KOFXI_SH4_CYCLES_OLD") != nullptr;
+static const char idle_hash[] =
+       //BIOS
+       ">:1:05:13B23363"
+       ">:1:04:2E23A33B"
+       ">:1:04:FB498832"
+       ">:1:0A:50A249F9"
+
+       //SC
+       ">:1:0A:B4E90338"
+       ">:1:04:11578A16"
+       ">:1:04:C281CC52"
+
+       //HH
+       ">:1:07:0757DC10"
+       ">:1:04:1476CC5E"
+
+       //these look very suspicious, but I'm not sure about any of them
+       //cross testing w/ IKA makes them more suspects than not
+       ">:1:0D:8C2921FF"
+       ">:1:04:B806EEE4"
+
+       // Dead or Alive 2
+       ">:1:08:0A37187A";
+
+// KOFXI: block hash identical to Dojo 6.46 RuntimeBlockInfo::hash (including its per-byte quirk)
+static const char* kofxiBlockHash(RuntimeBlockInfo* b)
+{
+	XXH32_hash_t hash = 0;
+	u8* ptr = GetMemPtr(b->addr, b->sh4_code_size);
+	if (ptr)
+	{
+		XXH32_state_t *state = XXH32_createState();
+		XXH32_reset(state, 7);
+		for (u32 i = 0; i < b->guest_opcodes; i++)
+		{
+			u16 data = ptr[i];
+			if ((data >> 12) == 0xD)
+				data = 0xD000;
+			XXH32_update(state, &data, 2);
+		}
+		hash = XXH32_digest(state);
+		XXH32_freeState(state);
+	}
+	static char block_hash[20];
+	sprintf(block_hash, ">:1:%02X:%08X", b->guest_opcodes, hash);
+	return block_hash;
+}
 
 static inline shil_param mk_imm(u32 immv)
 {
@@ -1078,6 +1127,9 @@ _end:
 	
 	if (cyclesOld)
 	{
+		if (!mmu_enabled() && std::strstr(idle_hash, kofxiBlockHash(blk)))
+			blk->guest_cycles = max_cycles;
+		else {
 		if (state.info.has_readm && !state.info.has_writem && !state.info.has_fpu && blk->guest_opcodes < 6)
 		{
 			if (blk->BlockType == BET_Cond_0 || (blk->BlockType == BET_Cond_1 && blk->BranchBlock <= blk->vaddr))
@@ -1087,6 +1139,7 @@ _end:
 		}
 		if ((blk->addr & 0x1FFF0000) == 0x0C000000)
 			blk->guest_cycles *= (blk->addr & 0x8000) ? 15 : 5;
+		}
 		blk->guest_cycles = std::min(blk->guest_cycles, max_cycles);
 	}
 	else
