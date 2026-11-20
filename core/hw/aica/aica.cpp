@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "aica.h"
 #include "aica_if.h"
 #include "aica_mem.h"
@@ -82,11 +83,13 @@ static bool UpdateSh4Ints()
 
 AicaTimer timers[3];
 int aica_schid = -1;
-constexpr int AICA_TICK = 4535;		// 44.1 KHz
+// KOFXI: KOFXI_AICA_BATCH selects the Flycast 2023 / Dojo 6.46 granularity (32 samples per tick)
+static const bool aicaBatch = std::getenv("KOFXI_AICA_BATCH") != nullptr;
+static const int AICA_TICK = aicaBatch ? 145125 : 4535;		// 44.1 KHz (/ 32 when batched)
 
 static int AicaUpdate(int tag, int cycles, int jitter, void *arg)
 {
-	arm::run(1);
+	arm::run(aicaBatch ? 32 : 1);
 
 	return AICA_TICK;
 }

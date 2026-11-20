@@ -1,3 +1,9 @@
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <windows.h>
+#include "hw/sh4/sh4_sched.h"
+#include "hw/sh4/sh4_mem.h"
 #include "Renderer_if.h"
 #include "spg.h"
 #include "rend/texconv.h"
@@ -559,6 +565,10 @@ void rend_start_render()
 	ctx->rend.fog_clamp_min = FOG_CLAMP_MIN;
 	ctx->rend.fog_clamp_max = FOG_CLAMP_MAX;
 
+	{
+		static FILE* rl = [](){ const char* sp = std::getenv("KOFXI_REND_LOG"); if (!sp) return (FILE*)nullptr; char b[600]; std::snprintf(b, sizeof b, "%s.%lu", sp, (unsigned long)GetCurrentProcessId()); return std::fopen(b, "w"); }();
+		if (rl) { u16 c; std::memcpy(&c, &mem_b[0x1478C8], 2); std::fprintf(rl, "%u %llu %d\n", (unsigned)c, (unsigned long long)sh4_sched_now64(), (int)ctx->rend.isRTT); std::fflush(rl); }
+	}
 	if (!ctx->rend.isRTT)
 	{
 		if (FB_W_SOF1 != fbAddrHistory[0] && FB_W_SOF1 != fbAddrHistory[1])

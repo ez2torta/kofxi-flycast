@@ -1,3 +1,8 @@
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <windows.h>
+#include "hw/sh4/sh4_mem.h"
 #include "types.h"
 #include "sh4_if.h"
 #include "sh4_sched.h"
@@ -162,6 +167,13 @@ static void handle_cb(sched_list& sched)
 	int elapsd = sh4_sched_elapsed(sched);
 	int jitter = elapsd - remain;
 
+	{
+		static FILE* sl = [](){ const char* sp = std::getenv("KOFXI_SCHED_LOG"); if (!sp) return (FILE*)nullptr; char b[600]; std::snprintf(b, sizeof b, "%s.%lu", sp, (unsigned long)GetCurrentProcessId()); return std::fopen(b, "w"); }();
+		if (sl) {
+			u16 c; std::memcpy(&c, &mem_b[0x1478C8], 2);
+			if (c >= 641 && c <= 650) { std::fprintf(sl, "%u %llu %d %d %d", (unsigned)c, (unsigned long long)sh4_sched_now64(), (int)(&sched - &sch_list[0]), remain, jitter); std::fputc(10, sl); }
+		}
+	}
 	sched.end = -1;
 	int re_sch = sched.cb(sched.tag, remain, jitter, sched.arg);
 
