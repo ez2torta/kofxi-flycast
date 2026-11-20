@@ -3,6 +3,7 @@
 	It decodes sh4 opcodes too
 */
 
+#include <cstdlib>
 #include "types.h"
 
 #if FEAT_SHREC != DYNAREC_NONE
@@ -24,6 +25,8 @@
 
 static RuntimeBlockInfo* blk;
 static Sh4Cycles cycleCounter;
+// KOFXI: KOFXI_SH4_CYCLES_OLD selects the Dojo 6.46 block cycle model (1 cycle per opcode, loop/syscall multipliers)
+static const bool cyclesOld = std::getenv("KOFXI_SH4_CYCLES_OLD") != nullptr;
 
 static inline shil_param mk_imm(u32 immv)
 {
@@ -842,6 +845,9 @@ static bool dec_generic(u32 op)
 
 					Emit(shop_div32p2, mk_reg(div_som_reg3), mk_reg(div_som_reg3), mk_reg(div_som_reg2), 0, mk_reg(reg_sr_T));
 					
+					if (cyclesOld)
+						blk->guest_cycles += 64;
+					else
 					for (int i = 1; i <= 64; i++)
 					{
 						u16 op = IReadMem16(state.cpu.rpc + i * 2);
@@ -878,6 +884,9 @@ static bool dec_generic(u32 op)
 					
 					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(1));					// clean up T
 
+					if (cyclesOld)
+						blk->guest_cycles += 64;
+					else
 					for (int i = 1; i <= 64; i++)
 					{
 						u16 op = IReadMem16(state.cpu.rpc + i * 2);
@@ -948,6 +957,12 @@ static void state_Setup(u32 rpc,fpscr_t fpu_cfg)
 
 void dec_updateBlockCycles(RuntimeBlockInfo *block, u16 op)
 {
+	if (cyclesOld)
+	{
+		if (op < 0xF000)
+			block->guest_cycles++;
+		return;
+	}
 	block->guest_cycles += cycleCounter.countCycles(op);
 }
 
@@ -1061,6 +1076,20 @@ _end:
 
 	verify(blk->oplist.size() <= BLOCK_MAX_SH_OPS_HARD);
 	
+	if (cyclesOld)
+	{
+		if (state.info.has_readm && !state.info.has_writem && !state.info.has_fpu && blk->guest_opcodes < 6)
+		{
+			if (blk->BlockType == BET_Cond_0 || (blk->BlockType == BET_Cond_1 && blk->BranchBlock <= blk->vaddr))
+				blk->guest_cycles *= 3;
+			if (blk->BranchBlock == blk->vaddr)
+				blk->guest_cycles *= 10;
+		}
+		if ((blk->addr & 0x1FFF0000) == 0x0C000000)
+			blk->guest_cycles *= (blk->addr & 0x8000) ? 15 : 5;
+		blk->guest_cycles = std::min(blk->guest_cycles, max_cycles);
+	}
+	else
 	blk->guest_cycles = std::round(blk->guest_cycles * 200.f / std::max(1.f, (float)config::Sh4Clock));
 
 	//make sure we don't use wayy-too-few cycles
